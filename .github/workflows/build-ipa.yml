@@ -14,9 +14,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Select Xcode
+        run: |
+          ls /Applications/ | grep -i xcode
+          sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
+          xcodebuild -version
+      
       - name: List Files
         run: |
-          echo "=== Root ==="
+          echo "=== Files ==="
           ls -la
           echo ""
           echo "=== Swift Files ==="
@@ -24,25 +30,53 @@ jobs:
           echo ""
           echo "=== Xcode Project ==="
           ls *.xcodeproj
-          echo ""
-          echo "=== Xcode Version ==="
-          xcodebuild -version 2>/dev/null || echo "Xcode not found"
       
       - name: Build
         run: |
-          cd iOSApp.xcodeproj/.. 2>/dev/null || true
-          echo "Current dir:"
-          pwd
-          ls -la
-          echo ""
-          echo "Attempting build..."
-          xcodebuild build             -project iOSApp.xcodeproj             -scheme iOSApp             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             CODE_SIGNING_ALLOWED=NO             CODE_SIGNING_REQUIRED=NO             ONLY_ACTIVE_ARCH=YES || true
+          xcodebuild build \
+            -project MyApp.xcodeproj \
+            -scheme MyApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO || true
           echo "Build exit: $?"
       
       - name: Archive
         run: |
-          echo "Attempting archive..."
           mkdir -p build
-          xcodebuild archive             -project iOSApp.xcodeproj             -scheme iOSApp             -configuration Release             -sdk iphoneos             -destination 'generic/platform=iOS'             -archivePath build/iOSApp.xcarchive             CODE_SIGNING_ALLOWED=YES             CODE_SIGNING_REQUIRED=NO             DEVELOPMENT_TEAM="" || true
+          xcodebuild archive \
+            -project MyApp.xcodeproj \
+            -scheme MyApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/MyApp.xcarchive \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" || true
           echo "Archive exit: $?"
           ls -la build/ 2>/dev/null || true
+      
+      - name: Create IPA
+        run: |
+          if [ -d "build/MyApp.xcarchive/Products/Applications/MyApp.app" ]; then
+            mkdir -p Payload
+            cp -R build/MyApp.xcarchive/Products/Applications/MyApp.app Payload/
+            zip -r MyApp.ipa Payload
+            rm -rf Payload
+            ls -la MyApp.ipa
+            echo "IPA size: $(du -sh MyApp.ipa | cut -f1)"
+          else
+            echo "Error: Archive not found"
+            ls -la build/
+            exit 1
+          fi
+      
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyApp-ipa
+          path: MyApp.ipa
+          retention-days: 7

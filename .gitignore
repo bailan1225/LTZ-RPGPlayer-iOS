@@ -10,12 +10,12 @@ xcuserdata/
 .DS_Store
 ._*
 
-# Provisioning
-*.mobileprovision
-*.cer
-*.p12
-
 # Build products
 build/
 *.xcarchive/
 *.ipa
+
+# Provisioning
+*.mobileprovision
+*.cer
+*.p12
