@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 56;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -12,11 +12,12 @@
 
 /* Begin PBXFileReference section */
 		B1 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		C1 /* SimpleApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D1 /* MyApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		D1 /* Frameworks */ = {
+		E1 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -26,96 +27,97 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		E1 /* SimpleApp */ = {
+		F1 /* MyApp */ = {
 			isa = PBXGroup;
 			children = (
 				B1 /* AppDelegate.swift */,
-				F1 /* Info.plist */,
+				C1 /* Info.plist */,
 				G1 /* Assets.xcassets */,
 			);
-			path = SimpleApp;
+			path = MyApp;
 			sourceTree = "<group>";
 		};
-		H1 /* Products */ = {
+		H1 /* Assets.xcassets */ = {
 			isa = PBXGroup;
 			children = (
-				C1 /* SimpleApp.app */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		I1 /* Root */ = {
-			isa = PBXGroup;
-			children = (
-				E1 /* SimpleApp */,
-				H1 /* Products */,
-			);
-			sourceTree = "<group>";
-		};
-		F1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		G1 /* Assets.xcassets */ = {
-			isa = PBXGroup;
-			children = (
-				J1 /* AppIcon.appiconset */,
+				I1 /* AppIcon.appiconset */,
 			);
 			path = Assets.xcassets;
 			sourceTree = "<group>";
 		};
-		J1 /* AppIcon.appiconset */ = {
+		I1 /* AppIcon.appiconset */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			name = AppIcon.appiconset;
 			sourceTree = "<group>";
 		};
+		J1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D1 /* MyApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		K1 /* Root */ = {
+			isa = PBXGroup;
+			children = (
+				F1 /* MyApp */,
+				J1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		K1 /* SimpleApp */ = {
+		L1 /* MyApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = L1 /* Build configuration list for PBXNativeTarget "SimpleApp" */;
+			buildConfigurationList = M1 /* Build configuration list for PBXNativeTarget "MyApp" */;
 			buildPhases = (
-				M1 /* Sources */,
-				D1 /* Frameworks */,
-				N1 /* Resources */,
+				N1 /* Sources */,
+				E1 /* Frameworks */,
+				O1 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = SimpleApp;
-			productName = SimpleApp;
-			productReference = C1 /* SimpleApp.app */;
+			name = MyApp;
+			productName = MyApp;
+			productReference = D1 /* MyApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		O1 /* Project object */ = {
+		P1 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
 			};
-			buildConfigurationList = P1 /* Build configuration list for PBXProject "SimpleApp" */;
-			compatibilityVersion = "Xcode 3.2";
+			buildConfigurationList = Q1 /* Build configuration list for PBXProject "MyApp" */;
+			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = I1;
-			productRefGroup = H1 /* Products */;
+			mainGroup = K1;
+			productRefGroup = J1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				K1 /* SimpleApp */,
+				L1 /* MyApp */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		N1 /* Resources */ = {
+		O1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -125,7 +127,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		M1 /* Sources */ = {
+		N1 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -136,7 +138,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		Q1 /* Debug */ = {
+		R1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -154,8 +156,8 @@
 				);
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
-				MTL_ENABLE_DEBUG_INFO = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
@@ -163,7 +165,7 @@
 			};
 			name = Debug;
 		};
-		R1 /* Release */ = {
+		S1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -179,7 +181,7 @@
 				);
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -187,7 +189,7 @@
 			};
 			name = Release;
 		};
-		S1 /* Debug */ = {
+		T1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -195,13 +197,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = SimpleApp/Info.plist;
+				INFOPLIST_FILE = MyApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.simpleapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.myapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -209,7 +211,7 @@
 			};
 			name = Debug;
 		};
-		T1 /* Release */ = {
+		U1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -217,13 +219,13 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = SimpleApp/Info.plist;
+				INFOPLIST_FILE = MyApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.simpleapp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.myapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -234,20 +236,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		L1 /* Build configuration list for PBXNativeTarget "SimpleApp" */ = {
+		M1 /* Build configuration list for PBXNativeTarget "MyApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				S1 /* Debug */,
-				T1 /* Release */,
+				T1 /* Debug */,
+				U1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		P1 /* Build configuration list for PBXProject "SimpleApp" */ = {
+		Q1 /* Build configuration list for PBXProject "MyApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				Q1 /* Debug */,
-				R1 /* Release */,
+				R1 /* Debug */,
+				S1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -255,5 +257,5 @@
 /* End XCConfigurationList section */
 
 	};
-	rootObject = O1 /* Project object */;
+	rootObject = P1 /* Project object */;
 }

@@ -10,12 +10,12 @@
          <BuildActionEntry
             buildableReference = (
                ItemType = "file"
-               ItemPath = "SimpleApp.xcodeproj"
-               ItemGUID = "K1"
+               ItemPath = "MyApp.xcodeproj"
+               ItemGUID = "L1"
             )
-            BuildableName = "SimpleApp.app"
-            BlueprintName = "SimpleApp"
-            ReferencedContainer = "container:SimpleApp.xcodeproj">
+            BuildableName = "MyApp.app"
+            BlueprintName = "MyApp"
+            ReferencedContainer = "container:MyApp.xcodeproj">
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
@@ -40,8 +40,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintAddress = "K1"
-            ReferencedContainer = "container:SimpleApp.xcodeproj">
+            BlueprintAddress = "L1"
+            ReferencedContainer = "container:MyApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -55,8 +55,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintAddress = "K1"
-            ReferencedContainer = "container:SimpleApp.xcodeproj">
+            BlueprintAddress = "L1"
+            ReferencedContainer = "container:MyApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

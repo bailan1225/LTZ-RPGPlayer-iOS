@@ -1,11 +1,7 @@
 node_modules/
 .DS_Store
 *.log
-.capacitor/
-ios/Pods/
-ios/App/Pods
-ios/App/build/
-ios/App/.xcworkspace/
-ios/App.xcodeproj/
+.build/
+*.xcarchive/
 *.ipa
-build/
+Payload/
