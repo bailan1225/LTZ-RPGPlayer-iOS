@@ -14,38 +14,64 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Check Environment
+      - name: Select Xcode
         run: |
-          echo "=== System Info ==="
-          uname -a
-          echo ""
-          echo "=== Xcode ==="
+          ls /Applications/ | grep -i xcode
+          sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
-          echo ""
-          echo "=== Swift ==="
           swift --version
-          echo ""
-          echo "=== Files ==="
-          find . -type f | sort
-          echo ""
-          echo "=== Project Files ==="
-          ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj found"
-          ls -la *.xcworkspace 2>/dev/null || echo "No xcworkspace found"
       
-      - name: Create Dummy IPA
+      - name: Check Project
         run: |
-          echo "Creating dummy IPA..."
-          mkdir -p Payload
-          # 创建一个简单的目录结构作为测试
-          mkdir -p Payload/DummyApp.app
-          echo "test" > Payload/DummyApp.app/Info.plist
-          zip -qr DummyApp.ipa Payload
-          rm -rf Payload
-          ls -la DummyApp.ipa
-          echo "Dummy IPA created successfully"
+          echo "=== Files ==="
+          find . -name "*.swift"
+          echo ""
+          echo "=== Xcode Project ==="
+          ls *.xcodeproj
+          echo ""
+          echo "=== Scheme ==="
+          ls SimpleApp.xcodeproj/xcshareddata/xcschemes/
       
-      - name: Upload
+      - name: Build Archive
+        run: |
+          mkdir -p build
+          xcodebuild archive \
+            -project SimpleApp.xcodeproj \
+            -scheme SimpleApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/SimpleApp.xcarchive \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            2>&1 | tee build.log
+          
+          if [ -d "build/SimpleApp.xcarchive" ]; then
+            echo "Archive created successfully"
+          else
+            echo "Error: Archive not found"
+            exit 1
+          fi
+      
+      - name: Create IPA
+        run: |
+          if [ -d "build/SimpleApp.xcarchive/Products/Applications/SimpleApp.app" ]; then
+            mkdir -p Payload
+            cp -R build/SimpleApp.xcarchive/Products/Applications/SimpleApp.app Payload/
+            zip -r SimpleApp.ipa Payload
+            rm -rf Payload
+            ls -la SimpleApp.ipa
+            echo "IPA size: $(du -sh SimpleApp.ipa | cut -f1)"
+          else
+            echo "Error: App not found"
+            ls -la build/SimpleApp.xcarchive/Products/Applications/
+            exit 1
+          fi
+      
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: test-ipa
-          path: DummyApp.ipa
+          name: SimpleApp-ipa
+          path: SimpleApp.ipa
+          retention-days: 7
