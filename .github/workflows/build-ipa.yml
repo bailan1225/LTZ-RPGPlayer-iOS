@@ -14,41 +14,75 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Check Environment
+      - name: Select Xcode
         run: |
-          echo "=== System Info ==="
-          uname -a
-          echo ""
-          echo "=== Xcode Version ==="
-          xcodebuild -version 2>/dev/null || echo "Xcode not found"
-          echo ""
-          echo "=== Swift Version ==="
-          swift --version 2>/dev/null || echo "Swift not found"
-          echo ""
-          echo "=== Available Xcode Versions ==="
-          ls /Applications/ | grep -i xcode || echo "No Xcode found"
-          echo ""
-          echo "=== Current Directory ==="
-          pwd
+          echo "Available Xcode versions:"
+          ls /Applications/ | grep -i xcode
+          sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
+          xcodebuild -version
+          swift --version
+      
+      - name: Check Project
+        run: |
+          echo "=== Project Structure ==="
           ls -la
           echo ""
           echo "=== Swift Files ==="
           find . -name "*.swift"
           echo ""
-          echo "=== Xcode Projects ==="
-          find . -name "*.xcodeproj"
+          echo "=== Xcode Project ==="
+          ls *.xcodeproj
+          echo ""
+          echo "=== Scheme ==="
+          ls MyApp.xcodeproj/xcshareddata/xcschemes/
       
-      - name: Create Test IPA
+      - name: Build Archive
         run: |
-          echo "Creating test IPA..."
-          mkdir -p build/Payload
-          # Create a dummy app bundle
-          mkdir -p build/Payload/TestApp.app
-          echo "Mock IPA created"
-          ls -la build/Payload/
+          echo "Starting archive build..."
+          mkdir -p build
           
-      - name: Upload
+          xcodebuild archive \
+            -project MyApp.xcodeproj \
+            -scheme MyApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/MyApp.xcarchive \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            2>&1 | tee build.log
+          
+          echo "Build completed"
+          
+          if [ -d "build/MyApp.xcarchive" ]; then
+            echo "Archive created successfully"
+            ls -la build/MyApp.xcarchive/
+          else
+            echo "Error: Archive not found"
+            exit 1
+          fi
+      
+      - name: Create IPA
+        run: |
+          echo "Creating IPA..."
+          if [ -d "build/MyApp.xcarchive/Products/Applications/MyApp.app" ]; then
+            mkdir -p Payload
+            cp -R build/MyApp.xcarchive/Products/Applications/MyApp.app Payload/
+            zip -r MyApp.ipa Payload
+            rm -rf Payload
+            ls -la MyApp.ipa
+            echo "IPA size: $(du -sh MyApp.ipa | cut -f1)"
+          else
+            echo "Error: App not found in archive"
+            ls -la build/MyApp.xcarchive/Products/Applications/
+            exit 1
+          fi
+      
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: test-output
-          path: build/
+          name: MyApp-ipa
+          path: MyApp.ipa
+          retention-days: 7
