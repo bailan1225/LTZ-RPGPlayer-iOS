@@ -1,0 +1,19 @@
+{
+  "name": "ltz-rpg-player",
+  "version": "1.0.0",
+  "description": "LTZ RPG Player - RPG Maker MV/MZ iOS Player",
+  "main": "src/js/main.js",
+  "scripts": {
+    "start": "npx cap serve",
+    "build": "npx cap copy",
+    "ios": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/ios": "^6.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

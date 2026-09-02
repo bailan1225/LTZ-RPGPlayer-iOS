@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LTZ RPG Player</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎮 LTZ RPG Player</h1>
+      <p class="subtitle">RPG Maker MV/MZ 游戏播放器</p>
+    </header>
+    
+    <main>
+      <div class="input-section">
+        <label for="gameUrl">游戏地址:</label>
+        <input type="text" id="gameUrl" placeholder="输入 RPG Maker MV/MZ 游戏路径..." value="">
+        <button id="loadBtn">加载游戏</button>
+      </div>
+      
+      <div class="games-section">
+        <h3>📚 我的游戏</h3>
+        <div id="gamesList" class="games-list">
+          <div class="empty-tip">暂无游戏，添加游戏路径即可开始</div>
+        </div>
+      </div>
+      
+      <div id="gameContainer" class="game-container">
+        <div id="loading" class="loading hidden">
+          <div class="spinner"></div>
+          <p>正在加载游戏...</p>
+        </div>
+        <iframe id="gameFrame" class="game-frame" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+      </div>
+    </main>
+    
+    <footer>
+      <p>LTZ RPG Player v1.0.0 | 支持 MV/MZ 格式</p>
+    </footer>
+  </div>
+  
+  <script src="js/main.js"></script>
+</body>
+</html>
