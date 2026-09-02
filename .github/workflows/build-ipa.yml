@@ -16,15 +16,13 @@ jobs:
       
       - name: Select Xcode
         run: |
-          echo "Available Xcode versions:"
           ls /Applications/ | grep -i xcode
           sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
-          swift --version
       
       - name: Check Project
         run: |
-          echo "=== Project Structure ==="
+          echo "=== Files ==="
           ls -la
           echo ""
           echo "=== Swift Files ==="
@@ -32,33 +30,25 @@ jobs:
           echo ""
           echo "=== Xcode Project ==="
           ls *.xcodeproj
-          echo ""
-          echo "=== Scheme ==="
-          ls MyApp.xcodeproj/xcshareddata/xcschemes/
       
       - name: Build Archive
         run: |
-          echo "Starting archive build..."
           mkdir -p build
-          
           xcodebuild archive \
-            -project MyApp.xcodeproj \
-            -scheme MyApp \
+            -project SimpleApp.xcodeproj \
+            -scheme SimpleApp \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/MyApp.xcarchive \
+            -archivePath build/SimpleApp.xcarchive \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tee build.log
           
-          echo "Build completed"
-          
-          if [ -d "build/MyApp.xcarchive" ]; then
-            echo "Archive created successfully"
-            ls -la build/MyApp.xcarchive/
+          if [ -d "build/SimpleApp.xcarchive" ]; then
+            echo "Archive created"
+            ls -la build/SimpleApp.xcarchive/
           else
             echo "Error: Archive not found"
             exit 1
@@ -66,23 +56,21 @@ jobs:
       
       - name: Create IPA
         run: |
-          echo "Creating IPA..."
-          if [ -d "build/MyApp.xcarchive/Products/Applications/MyApp.app" ]; then
+          if [ -d "build/SimpleApp.xcarchive/Products/Applications/SimpleApp.app" ]; then
             mkdir -p Payload
-            cp -R build/MyApp.xcarchive/Products/Applications/MyApp.app Payload/
-            zip -r MyApp.ipa Payload
+            cp -R build/SimpleApp.xcarchive/Products/Applications/SimpleApp.app Payload/
+            zip -r SimpleApp.ipa Payload
             rm -rf Payload
-            ls -la MyApp.ipa
-            echo "IPA size: $(du -sh MyApp.ipa | cut -f1)"
+            ls -la SimpleApp.ipa
           else
-            echo "Error: App not found in archive"
-            ls -la build/MyApp.xcarchive/Products/Applications/
+            echo "Error: App not found"
+            ls -la build/SimpleApp.xcarchive/Products/Applications/
             exit 1
           fi
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: MyApp-ipa
-          path: MyApp.ipa
+          name: SimpleApp-ipa
+          path: SimpleApp.ipa
           retention-days: 7
