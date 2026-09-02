@@ -14,64 +14,70 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Install xcodegen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+      
+      - name: Generate Xcode Project
+        run: |
+          xcodegen generate
+          ls -la *.xcodeproj
+          ls MyRPG.xcodeproj/xcshareddata/xcschemes/
+      
       - name: Select Xcode
         run: |
           ls /Applications/ | grep -i xcode
           sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
-          swift --version
       
-      - name: Check Project
-        run: |
-          echo "=== Files ==="
-          find . -name "*.swift"
-          echo ""
-          echo "=== Xcode Project ==="
-          ls *.xcodeproj
-          echo ""
-          echo "=== Scheme ==="
-          ls MyRPG.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || ls *.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No schemes found"
-          echo ""
-          echo "=== project.pbxproj ==="
-          cat *.xcodeproj/project.pbxproj
-      
-      - name: Build
+      - name: Build Archive
         run: |
           mkdir -p build
+          echo "Starting archive build..."
           
-          # 列出所有 xcodeproj
-          echo "Available projects:"
-          ls *.xcodeproj
+          xcodebuild archive \
+            -project MyRPG.xcodeproj \
+            -scheme MyRPG \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/MyRPG.xcarchive \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            2>&1 | tee build.log
           
-          # 尝试构建
-          for proj in *.xcodeproj; do
-            echo "Trying to build $proj..."
-            xcodebuild build \
-              -project "$proj" \
-              -configuration Release \
-              -sdk iphoneos \
-              -destination 'generic/platform=iOS' \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              2>&1 | tail -50
-          done
-          
-          echo "Build completed"
+          if [ -d "build/MyRPG.xcarchive" ]; then
+            echo "Archive created successfully"
+            ls -la build/MyRPG.xcarchive/
+          else
+            echo "Error: Archive not found"
+            cat build.log
+            exit 1
+          fi
       
-      - name: Create Dummy IPA
+      - name: Create IPA
         run: |
-          echo "Creating test IPA..."
-          mkdir -p Payload
-          mkdir -p Payload/TestApp.app
-          echo "Mock" > Payload/TestApp.app/Info.plist
-          zip -r TestApp.ipa Payload
-          rm -rf Payload
-          ls -la TestApp.ipa
-          echo "Test IPA created"
+          echo "Creating IPA..."
+          
+          if [ -d "build/MyRPG.xcarchive/Products/Applications/MyRPG.app" ]; then
+            mkdir -p Payload
+            cp -R build/MyRPG.xcarchive/Products/Applications/MyRPG.app Payload/
+            zip -r MyRPG.ipa Payload
+            rm -rf Payload
+            ls -la MyRPG.ipa
+            echo "IPA size: $(du -sh MyRPG.ipa | cut -f1)"
+          else
+            echo "Error: App not found in archive"
+            ls -la build/MyRPG.xcarchive/Products/Applications/
+            exit 1
+          fi
       
-      - name: Upload
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: test-ipa
-          path: TestApp.ipa
+          name: MyRPG-ipa
+          path: MyRPG.ipa
           retention-days: 7
