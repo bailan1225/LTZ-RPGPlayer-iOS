@@ -1,0 +1,14 @@
+{
+  "name": "ltz-rpg-player",
+  "version": "1.0.0",
+  "description": "LTZ RPG Player for iOS - Web-based RPG player with AI translation",
+  "main": "src/index.html",
+  "scripts": {
+    "start": "npx cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/cli": "^6.1.0",
+    "@capacitor/ios": "^6.1.0"
+  }
+}
