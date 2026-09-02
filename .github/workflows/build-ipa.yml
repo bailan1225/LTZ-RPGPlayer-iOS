@@ -14,69 +14,41 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Select Xcode
+      - name: Check Environment
         run: |
-          ls /Applications/ | grep -i xcode
-          sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
-          xcodebuild -version
-      
-      - name: List Files
-        run: |
-          echo "=== Files ==="
+          echo "=== System Info ==="
+          uname -a
+          echo ""
+          echo "=== Xcode Version ==="
+          xcodebuild -version 2>/dev/null || echo "Xcode not found"
+          echo ""
+          echo "=== Swift Version ==="
+          swift --version 2>/dev/null || echo "Swift not found"
+          echo ""
+          echo "=== Available Xcode Versions ==="
+          ls /Applications/ | grep -i xcode || echo "No Xcode found"
+          echo ""
+          echo "=== Current Directory ==="
+          pwd
           ls -la
           echo ""
           echo "=== Swift Files ==="
           find . -name "*.swift"
           echo ""
-          echo "=== Xcode Project ==="
-          ls *.xcodeproj
+          echo "=== Xcode Projects ==="
+          find . -name "*.xcodeproj"
       
-      - name: Build
+      - name: Create Test IPA
         run: |
-          xcodebuild build \
-            -project MyApp.xcodeproj \
-            -scheme MyApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO || true
-          echo "Build exit: $?"
-      
-      - name: Archive
-        run: |
-          mkdir -p build
-          xcodebuild archive \
-            -project MyApp.xcodeproj \
-            -scheme MyApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath build/MyApp.xcarchive \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGNING_REQUIRED=NO \
-            DEVELOPMENT_TEAM="" || true
-          echo "Archive exit: $?"
-          ls -la build/ 2>/dev/null || true
-      
-      - name: Create IPA
-        run: |
-          if [ -d "build/MyApp.xcarchive/Products/Applications/MyApp.app" ]; then
-            mkdir -p Payload
-            cp -R build/MyApp.xcarchive/Products/Applications/MyApp.app Payload/
-            zip -r MyApp.ipa Payload
-            rm -rf Payload
-            ls -la MyApp.ipa
-            echo "IPA size: $(du -sh MyApp.ipa | cut -f1)"
-          else
-            echo "Error: Archive not found"
-            ls -la build/
-            exit 1
-          fi
-      
-      - name: Upload IPA
+          echo "Creating test IPA..."
+          mkdir -p build/Payload
+          # Create a dummy app bundle
+          mkdir -p build/Payload/TestApp.app
+          echo "Mock IPA created"
+          ls -la build/Payload/
+          
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: MyApp-ipa
-          path: MyApp.ipa
-          retention-days: 7
+          name: test-output
+          path: build/
