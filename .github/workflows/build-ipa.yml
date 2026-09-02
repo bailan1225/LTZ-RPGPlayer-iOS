@@ -14,65 +14,114 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install Dependencies
+        run: npm install
+      
+      - name: Add iOS Platform
+        run: npx cap add ios
+      
+      - name: Sync Web Assets
+        run: npx cap sync ios
+      
+      - name: Check iOS Structure
+        run: |
+          echo "=== iOS Directory ==="
+          ls -la ios/
+          echo ""
+          echo "=== App Directory ==="
+          ls -la ios/App/
+          echo ""
+          echo "=== Workspace ==="
+          ls ios/*.xcworkspace 2>/dev/null || echo "No root workspace"
+          ls ios/App/*.xcworkspace 2>/dev/null || echo "No App workspace"
+          echo ""
+          echo "=== Xcode Project ==="
+          find ios -name "*.xcodeproj" -type d
+          echo ""
+          echo "=== Schemes ==="
+          find ios -name "*.xcscheme" -type f
+      
       - name: Select Xcode
         run: |
           ls /Applications/ | grep -i xcode
           sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
       
-      - name: Check Project
-        run: |
-          echo "=== Files ==="
-          find . -name "*.swift"
-          echo ""
-          echo "=== Xcode Project ==="
-          ls *.xcodeproj
-          echo ""
-          echo "=== Scheme ==="
-          ls LTZRPGPlayer.xcodeproj/xcshareddata/xcschemes/
-      
       - name: Build Archive
         run: |
           mkdir -p build
           echo "Starting archive build..."
           
+          # 查找正确的 workspace 和 scheme
+          WORKSPACE=""
+          SCHEME=""
+          
+          # 尝试常见的 Capacitor 项目结构
+          if [ -d "ios/App/App.xcworkspace" ]; then
+            WORKSPACE="ios/App/App.xcworkspace"
+            SCHEME="App"
+          elif [ -d "ios/App.xcworkspace" ]; then
+            WORKSPACE="ios/App.xcworkspace"
+            SCHEME="App"
+          fi
+          
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No workspace found"
+            ls -la ios/
+            ls -la ios/App/ 2>/dev/null || true
+            exit 1
+          fi
+          
+          echo "Using workspace: $WORKSPACE"
+          echo "Using scheme: $SCHEME"
+          
           xcodebuild archive \
-            -project LTZRPGPlayer.xcodeproj \
-            -scheme LTZRPGPlayer \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/LTZRPGPlayer.xcarchive \
+            -archivePath build/App.xcarchive \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tee build.log
           
-          if [ -d "build/LTZRPGPlayer.xcarchive" ]; then
+          if [ -d "build/App.xcarchive" ]; then
             echo "Archive created successfully"
+            ls -la build/App.xcarchive/
           else
             echo "Error: Archive not found"
-            cat build.log | tail -50
+            cat build.log | tail -100
             exit 1
           fi
       
       - name: Create IPA
         run: |
-          if [ -d "build/LTZRPGPlayer.xcarchive/Products/Applications/LTZRPGPlayer.app" ]; then
+          echo "Creating IPA..."
+          
+          if [ -d "build/App.xcarchive/Products/Applications/App.app" ]; then
             mkdir -p Payload
-            cp -R build/LTZRPGPlayer.xcarchive/Products/Applications/LTZRPGPlayer.app Payload/
-            zip -r LTZRPGPlayer.ipa Payload
+            cp -R build/App.xcarchive/Products/Applications/App.app Payload/
+            zip -r App.ipa Payload
             rm -rf Payload
-            ls -la LTZRPGPlayer.ipa
+            ls -la App.ipa
+            echo "IPA size: $(du -sh App.ipa | cut -f1)"
           else
             echo "Error: App not found"
-            ls -la build/LTZRPGPlayer.xcarchive/Products/Applications/
+            ls -la build/App.xcarchive/Products/Applications/
             exit 1
           fi
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LTZRPGPlayer-ipa
-          path: LTZRPGPlayer.ipa
-          retention-days: 7
+          name: App-ipa
+          path: App.ipa
+          retention-days: 30
