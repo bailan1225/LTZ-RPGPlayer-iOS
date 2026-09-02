@@ -30,26 +30,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
-	<key>UTImportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeConformsTo</key>
-			<array><string>public.url</string></array>
-			<key>UTTypeDescription</key>
-			<string>URL</string>
-			<key>UTTypeIdentifier</key>
-			<string>public.url</string>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array><string>url</string></array>
-			</dict>
-		</dict>
-	</array>
 </dict>
 </plist>
