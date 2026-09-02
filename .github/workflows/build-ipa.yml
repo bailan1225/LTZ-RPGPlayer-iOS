@@ -14,88 +14,65 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      
-      - name: Install Dependencies
-        run: npm install
-      
-      - name: Add iOS Platform
-        run: npx cap add ios
-      
-      - name: Sync Web Assets
-        run: npx cap sync ios
-      
       - name: Select Xcode
         run: |
-          echo "Available Xcode versions:"
           ls /Applications/ | grep -i xcode
           sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
       
-      - name: Check Workspace
+      - name: Check Project
         run: |
-          echo "=== Checking workspace ==="
-          ls -la ios/App/*.xcworkspace
+          echo "=== Files ==="
+          find . -name "*.swift"
           echo ""
-          echo "=== Scheme files ==="
-          ls ios/App/ios/App.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || ls ios/App.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No schemes found"
+          echo "=== Xcode Project ==="
+          ls *.xcodeproj
+          echo ""
+          echo "=== Scheme ==="
+          ls LTZRPGPlayer.xcodeproj/xcshareddata/xcschemes/
       
       - name: Build Archive
         run: |
           mkdir -p build
           echo "Starting archive build..."
           
-          # 关键修复：使用 -workspace 而不是 -project
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
-            -scheme App \
+            -project LTZRPGPlayer.xcodeproj \
+            -scheme LTZRPGPlayer \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/App.xcarchive \
+            -archivePath build/LTZRPGPlayer.xcarchive \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tee build.log
           
-          echo "Build exit code: $?"
-          
-          if [ -d "build/App.xcarchive" ]; then
+          if [ -d "build/LTZRPGPlayer.xcarchive" ]; then
             echo "Archive created successfully"
-            ls -la build/App.xcarchive/
           else
             echo "Error: Archive not found"
-            cat build.log | tail -100
+            cat build.log | tail -50
             exit 1
           fi
       
       - name: Create IPA
         run: |
-          echo "Creating IPA..."
-          
-          if [ -d "build/App.xcarchive/Products/Applications/App.app" ]; then
+          if [ -d "build/LTZRPGPlayer.xcarchive/Products/Applications/LTZRPGPlayer.app" ]; then
             mkdir -p Payload
-            cp -R build/App.xcarchive/Products/Applications/App.app Payload/
-            zip -r App.ipa Payload
+            cp -R build/LTZRPGPlayer.xcarchive/Products/Applications/LTZRPGPlayer.app Payload/
+            zip -r LTZRPGPlayer.ipa Payload
             rm -rf Payload
-            ls -la App.ipa
-            echo "IPA size: $(du -sh App.ipa | cut -f1)"
-            
-            echo "Verifying IPA structure..."
-            unzip -l App.ipa | head -20
+            ls -la LTZRPGPlayer.ipa
           else
             echo "Error: App not found"
-            ls -la build/App.xcarchive/Products/Applications/
+            ls -la build/LTZRPGPlayer.xcarchive/Products/Applications/
             exit 1
           fi
       
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: App-ipa
-          path: App.ipa
-          retention-days: 30
+          name: LTZRPGPlayer-ipa
+          path: LTZRPGPlayer.ipa
+          retention-days: 7

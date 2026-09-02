@@ -7,17 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A1 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1 /* AppDelegate.swift */; };
+		1A000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000002 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		B1 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		C1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		D1 /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		1A000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A000004 /* LTZRPGPlayer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LTZRPGPlayer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A000005 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		E1 /* Frameworks */ = {
+		1A000006 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -27,78 +28,78 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		F1 /* App */ = {
+		1A000007 /* LTZRPGPlayer */ = {
 			isa = PBXGroup;
 			children = (
-				B1 /* AppDelegate.swift */,
-				C1 /* Info.plist */,
-				G1 /* Assets.xcassets */,
+				1A000002 /* AppDelegate.swift */,
+				1A000003 /* Info.plist */,
+				1A000005 /* Assets.xcassets */,
 			);
-			path = App;
+			path = LTZRPGPlayer;
 			sourceTree = "<group>";
 		};
-		H1 /* Assets.xcassets */ = {
+		1A000008 /* Assets.xcassets */ = {
 			isa = PBXGroup;
 			children = (
-				I1 /* AppIcon.appiconset */,
+				1A000009 /* AppIcon.appiconset */,
 			);
 			path = Assets.xcassets;
 			sourceTree = "<group>";
 		};
-		I1 /* AppIcon.appiconset */ = {
+		1A000009 /* AppIcon.appiconset */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			name = AppIcon.appiconset;
 			sourceTree = "<group>";
 		};
-		J1 /* Products */ = {
+		1A00000A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				D1 /* App.app */,
+				1A000004 /* LTZRPGPlayer.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		K1 /* Root */ = {
+		1A00000B /* Root */ = {
 			isa = PBXGroup;
 			children = (
-				F1 /* App */,
-				J1 /* Products */,
+				1A000007 /* LTZRPGPlayer */,
+				1A00000A /* Products */,
 			);
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		L1 /* App */ = {
+		1A00000C /* LTZRPGPlayer */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = M1 /* Build configuration list for PBXNativeTarget "App" */;
+			buildConfigurationList = 1A00000D /* Build configuration list for PBXNativeTarget "LTZRPGPlayer" */;
 			buildPhases = (
-				N1 /* Sources */,
-				E1 /* Frameworks */,
-				O1 /* Resources */,
+				1A00000E /* Sources */,
+				1A000006 /* Frameworks */,
+				1A00000F /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = App;
-			productName = App;
-			productReference = D1 /* App.app */;
+			name = LTZRPGPlayer;
+			productName = LTZRPGPlayer;
+			productReference = 1A000004 /* LTZRPGPlayer.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		P1 /* Project object */ = {
+		1A000010 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1540;
 				LastUpgradeCheck = 1540;
 			};
-			buildConfigurationList = Q1 /* Build configuration list for PBXProject "App" */;
+			buildConfigurationList = 1A000011 /* Build configuration list for PBXProject "LTZRPGPlayer" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -106,18 +107,18 @@
 				en,
 				Base,
 			);
-			mainGroup = K1;
-			productRefGroup = J1 /* Products */;
+			mainGroup = 1A00000B;
+			productRefGroup = 1A00000A /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				L1 /* App */,
+				1A00000C /* LTZRPGPlayer */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		O1 /* Resources */ = {
+		1A00000F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -127,18 +128,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		N1 /* Sources */ = {
+		1A00000E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1 /* AppDelegate.swift in Sources */,
+				1A000001 /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		R1 /* Debug */ = {
+		1A000012 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -165,7 +166,7 @@
 			};
 			name = Debug;
 		};
-		S1 /* Release */ = {
+		1A000013 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -189,7 +190,7 @@
 			};
 			name = Release;
 		};
-		T1 /* Debug */ = {
+		1A000014 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -197,7 +198,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_FILE = LTZRPGPlayer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -211,7 +212,7 @@
 			};
 			name = Debug;
 		};
-		U1 /* Release */ = {
+		1A000015 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -219,7 +220,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_FILE = LTZRPGPlayer/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -236,20 +237,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		M1 /* Build configuration list for PBXNativeTarget "App" */ = {
+		1A00000D /* Build configuration list for PBXNativeTarget "LTZRPGPlayer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				T1 /* Debug */,
-				U1 /* Release */,
+				1A000014 /* Debug */,
+				1A000015 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		Q1 /* Build configuration list for PBXProject "App" */ = {
+		1A000011 /* Build configuration list for PBXProject "LTZRPGPlayer" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				R1 /* Debug */,
-				S1 /* Release */,
+				1A000012 /* Debug */,
+				1A000013 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -257,5 +258,5 @@
 /* End XCConfigurationList section */
 
 	};
-	rootObject = P1 /* Project object */;
+	rootObject = 1A000010 /* Project object */;
 }

@@ -10,12 +10,12 @@
          <BuildActionEntry
             buildableReference = (
                ItemType = "file"
-               ItemPath = "App.xcodeproj"
-               ItemGUID = "L1"
+               ItemPath = "LTZRPGPlayer.xcodeproj"
+               ItemGUID = "1A00000C"
             )
-            BuildableName = "App.app"
-            BlueprintName = "App"
-            ReferencedContainer = "container:App.xcodeproj">
+            BuildableName = "LTZRPGPlayer.app"
+            BlueprintName = "LTZRPGPlayer"
+            ReferencedContainer = "container:LTZRPGPlayer.xcodeproj">
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
@@ -40,8 +40,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintAddress = "L1"
-            ReferencedContainer = "container:App.xcodeproj">
+            BlueprintAddress = "1A00000C"
+            ReferencedContainer = "container:LTZRPGPlayer.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -55,8 +55,8 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintAddress = "L1"
-            ReferencedContainer = "container:App.xcodeproj">
+            BlueprintAddress = "1A00000C"
+            ReferencedContainer = "container:LTZRPGPlayer.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
