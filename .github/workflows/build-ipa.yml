@@ -14,16 +14,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: List Files
-        run: |
-          echo "=== Files ==="
-          ls -la
-          echo ""
-          echo "=== Xcode Project ==="
-          find . -name "*.xcodeproj"
-          echo ""
-          echo "=== Swift Files ==="
-          find . -name "*.swift"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install Dependencies
+        run: npm install
+      
+      - name: Add iOS Platform
+        run: npx cap add ios
+      
+      - name: Sync Web Assets
+        run: npx cap sync ios
       
       - name: Select Xcode
         run: |
@@ -32,14 +35,22 @@ jobs:
           sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
           xcodebuild -version
       
+      - name: Check Workspace
+        run: |
+          echo "=== Checking workspace ==="
+          ls -la ios/App/*.xcworkspace
+          echo ""
+          echo "=== Scheme files ==="
+          ls ios/App/ios/App.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || ls ios/App.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No schemes found"
+      
       - name: Build Archive
         run: |
           mkdir -p build
           echo "Starting archive build..."
           
-          # 直接使用 project（没有 CocoaPods/Capacitor 依赖）
+          # 关键修复：使用 -workspace 而不是 -project
           xcodebuild archive \
-            -project App.xcodeproj \
+            -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
@@ -48,16 +59,17 @@ jobs:
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGNING_REQUIRED=NO \
             DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
             2>&1 | tee build.log
           
-          echo "Build exit: $?"
+          echo "Build exit code: $?"
           
           if [ -d "build/App.xcarchive" ]; then
             echo "Archive created successfully"
             ls -la build/App.xcarchive/
           else
             echo "Error: Archive not found"
-            cat build.log | tail -50
+            cat build.log | tail -100
             exit 1
           fi
       
@@ -72,6 +84,9 @@ jobs:
             rm -rf Payload
             ls -la App.ipa
             echo "IPA size: $(du -sh App.ipa | cut -f1)"
+            
+            echo "Verifying IPA structure..."
+            unzip -l App.ipa | head -20
           else
             echo "Error: App not found"
             ls -la build/App.xcarchive/Products/Applications/
@@ -83,4 +98,4 @@ jobs:
         with:
           name: App-ipa
           path: App.ipa
-          retention-days: 7
+          retention-days: 30
