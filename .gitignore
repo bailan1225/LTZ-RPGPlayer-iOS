@@ -1,11 +1,21 @@
-node_modules/
+# Swift
+*.swift
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# macOS
 .DS_Store
-*.log
-.capacitor/
-ios/Pods/
-ios/App/Pods
-ios/App/build/
-ios/App/.xcworkspace/
-ios/App.xcodeproj/
-*.ipa
+._*
+
+# Provisioning
+*.mobileprovision
+*.cer
+*.p12
+
+# Build products
 build/
+*.xcarchive/
+*.ipa

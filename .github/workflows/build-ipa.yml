@@ -14,37 +14,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      - name: Select Xcode
+        run: |
+          ls /Applications/ | grep -i xcode
+          sudo xcode-select -switch /Applications/Xcode_15.4.app 2>/dev/null || sudo xcode-select -switch /Applications/Xcode.app 2>/dev/null || true
+          xcodebuild -version
       
-      - name: Install Dependencies
-        run: npm install
-      
-      - name: Add iOS Platform
-        run: npx cap add ios
-      
-      - name: Sync iOS
-        run: npx cap sync ios
+      - name: Project Structure
+        run: |
+          echo "=== Files ==="
+          find . -type f | sort
+          echo ""
+          echo "=== Swift Files ==="
+          find . -name "*.swift"
+          echo ""
+          echo "=== Xcode Project ==="
+          ls -la *.xcodeproj
       
       - name: Build Archive
         run: |
-          cd ios/App
-          echo "Building archive..."
-          xcodebuild archive             -workspace App.xcworkspace             -scheme App             -configuration Release             -destination 'generic/platform=iOS'             -archivePath build/App.xcarchive             CODE_SIGNING_ALLOWED=YES             CODE_SIGNING_REQUIRED=NO             DEVELOPMENT_TEAM=""             PROVISIONING_PROFILE_SPECIFIER=""             2>&1 | tee build.log
-          echo "Archive exit: $?"
+          mkdir -p build
+          xcodebuild archive \
+            -project iOSApp.xcodeproj \
+            -scheme iOSApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/iOSApp.xcarchive \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER=""
+          echo "Exit code: $?"
       
       - name: Create IPA
         run: |
-          cd ios/App
-          if [ -d "build/App.xcarchive/Products/Applications/App.app" ]; then
+          if [ -d "build/iOSApp.xcarchive/Products/Applications/iOSApp.app" ]; then
+            echo "Archive success"
             mkdir -p Payload
-            cp -R build/App.xcarchive/Products/Applications/App.app Payload/
-            zip -r ../../ltz-rpg.ipa Payload
+            cp -R build/iOSApp.xcarchive/Products/Applications/iOSApp.app Payload/
+            zip -r iOSApp.ipa Payload
             rm -rf Payload
-            ls -la ../../ltz-rpg.ipa
-            echo "IPA created: $(du -sh ../../ltz-rpg.ipa | cut -f1)"
+            ls -la iOSApp.ipa
+            echo "IPA size: $(du -sh iOSApp.ipa | cut -f1)"
           else
             echo "Error: Archive not found"
             ls -la build/
@@ -54,6 +66,6 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LTZ-RPG-IPA
-          path: ltz-rpg.ipa
+          name: iOSApp-ipa
+          path: iOSApp.ipa
           retention-days: 7
