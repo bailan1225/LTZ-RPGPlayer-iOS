@@ -142,11 +142,19 @@ final class DataTranslator {
 
     static func scanStats(_ game: GameInfo) -> ScanStats {
         let fm = FileManager.default
-        let files = (try? fm.contentsOfDirectory(at: game.dataDir, includingPropertiesForKeys: nil)) ?? []
+        let files = ((try? fm.contentsOfDirectory(at: game.dataDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
         var stats = ScanStats()
         var seen = Set<String>()
-        for f in files where f.pathExtension == "json" {
+        // 预算：最多扫描 300 个文件、单文件 ≤ 32MB，保证任何情况下都能快速返回
+        var processed = 0
+        for f in files {
+            if processed >= 300 { break }
+            if let attrs = try? fm.attributesOfItem(atPath: f.path),
+               let size = attrs[.size] as? Int,
+               size > 32 * 1024 * 1024 { continue }
             guard let r = scanFile(f) else { continue }
+            processed += 1
             stats.fileCount += 1
             stats.refCount += r.refs.count
             for ref in r.refs where shouldTranslate(ref.plain, target: currentTarget) {

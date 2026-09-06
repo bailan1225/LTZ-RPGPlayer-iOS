@@ -17,7 +17,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = gameDir.lastPathComponent
+        title = SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent
         view.backgroundColor = .black
         UIApplication.shared.isIdleTimerDisabled = true
         setupWebView()
@@ -120,31 +120,20 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func loadGame() {
-        guard let target = GameDetector.resolveLoadTarget(for: gameDir) else {
+        // 目录名含 [ ] 空格等特殊字符时 file:// 相对资源加载失败，先自动重命名为安全名
+        let safeDir = SafePath.sanitize(gameDir)
+        guard let target = GameDetector.resolveLoadTarget(for: safeDir) else {
             let alert = UIAlertController(title: "无法识别游戏目录",
-                                          message: "\(gameDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
+                                          message: "\(safeDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
                                           preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .default))
             present(alert, animated: true)
             return
         }
-        var index = target.index
-        var readRoot = target.readRoot
-
-        // 目录名含 [ ] 空格等特殊字符时，file:// 相对资源加载会失败 → 走符号链接安全路径
-        if SafePath.containsUnsafeChars(readRoot) {
-            if let linkRoot = SafePath.link(for: gameDir),
-               index.path.hasPrefix(readRoot.path) {
-                let rel = String(index.path.dropFirst(readRoot.path.count))
-                index = linkRoot.appendingPathComponent(rel)
-                readRoot = linkRoot
-            }
-        }
-
         // allowingReadAccessTo 必须是目录 URL（尾斜杠），否则子资源读取被拒
-        let rootStr = readRoot.path.hasSuffix("/") ? readRoot.path : readRoot.path + "/"
+        let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
         let rootDir = URL(fileURLWithPath: rootStr, isDirectory: true)
-        webView.loadFileURL(index, allowingReadAccessTo: rootDir)
+        webView.loadFileURL(target.index, allowingReadAccessTo: rootDir)
     }
 
     // MARK: - WKScriptMessageHandler

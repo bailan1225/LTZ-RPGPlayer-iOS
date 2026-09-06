@@ -34,7 +34,8 @@ final class GamesViewController: UITableViewController {
                                                     options: [.skipsHiddenFiles])) ?? []
             for s in subs where s.hasDirectoryPath {
                 if GameDetector.isGameDir(s) {
-                    found.append(s)
+                    // 目录名含特殊字符时自动重命名为安全名（WKWebView 才能正常加载）
+                    found.append(SafePath.sanitize(s))
                 } else {
                     scan(s, depth + 1)
                 }
@@ -43,7 +44,7 @@ final class GamesViewController: UITableViewController {
 
         // Documents 根本身也可能是裸 www 游戏（js 直接铺在根下）
         if GameDetector.isGameDir(docs) {
-            found.append(docs)
+            found.append(SafePath.sanitize(docs))
         }
         scan(docs, 1)
 
@@ -52,6 +53,9 @@ final class GamesViewController: UITableViewController {
     }
 
     private func displayName(for url: URL) -> String {
+        if let original = SafePath.originalName(for: url) {
+            return original
+        }
         let docs = Self.documents
         if url.path == docs.path { return "（根目录）" }
         if url.path.hasPrefix(docs.path + "/") {

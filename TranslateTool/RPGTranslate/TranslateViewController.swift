@@ -41,15 +41,21 @@ final class TranslateViewController: UITableViewController {
         refreshStats()
     }
 
+    private var scanTask: DispatchWorkItem?
+
     private func refreshStats() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        scanTask?.cancel()
+        let w = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             let s = DataTranslator.scanStats(self.game)
+            guard !w.isCancelled else { return }
             DispatchQueue.main.async {
                 self.stats = s
                 self.tableView.reloadData()
             }
         }
+        scanTask = w
+        DispatchQueue.global(qos: .userInitiated).async(execute: w)
     }
 
     private func config() -> TranslationConfig {

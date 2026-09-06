@@ -12,28 +12,54 @@ enum ControlCode {
         let value: String
     }
 
-    private static let pattern = try! NSRegularExpression(
-        pattern: "\\([A-Za-z]+)\\[[^\\]]*\\]|\\\\[A-Za-z]|\\.",
-        options: [])
-
     /// 拆分文本为 控制码段 + 普通文本段
     /// 注意：%1 这类占位符**不拆分**（随文本一起交给翻译引擎，多数引擎会原样保留），
-    /// 只拆分 \X 系列控制码
+    /// 只拆分 \X 系列控制码。使用线性逐字符扫描，不用正则（避免任何回溯性能风险）
     static func split(_ text: String) -> [Part] {
         var parts: [Part] = []
-        let ns = text as NSString
-        let range = NSRange(location: 0, length: ns.length)
-        var last = 0
-        for m in pattern.matches(in: text, range: range) {
-            if m.range.location > last {
-                parts.append(Part(isCode: false, value: ns.substring(with: NSRange(location: last, length: m.range.location - last))))
+        var plain = ""
+        func flush() {
+            if !plain.isEmpty {
+                parts.append(Part(isCode: false, value: plain))
+                plain = ""
             }
-            parts.append(Part(isCode: true, value: ns.substring(with: m.range)))
-            last = m.range.location + m.range.length
         }
-        if last < ns.length {
-            parts.append(Part(isCode: false, value: ns.substring(with: NSRange(location: last, length: ns.length - last))))
+        let chars = Array(text)
+        var i = 0
+        let n = chars.count
+        while i < n {
+            let c = chars[i]
+            if c != "\\" || i + 1 >= n {
+                plain.append(c)
+                i += 1
+                continue
+            }
+            let next = chars[i + 1]
+            var consumed = 0
+            if next.isLetter {
+                // \X 或 \X[参数]：字母连续读取
+                var j = i + 2
+                while j < n && chars[j].isLetter { j += 1 }
+                if j < n && chars[j] == "[" {
+                    var k = j + 1
+                    while k < n && chars[k] != "]" { k += 1 }
+                    consumed = (k < n) ? (k + 1) : j  // 未闭合 [ 时只吞 \X
+                } else {
+                    consumed = j
+                }
+            } else if "\\^|!><{}$.".contains(next) {
+                consumed = i + 2
+            }
+            if consumed > 0 {
+                flush()
+                parts.append(Part(isCode: true, value: String(chars[i..<consumed])))
+                i = consumed
+            } else {
+                plain.append(c)
+                i += 1
+            }
         }
+        flush()
         return parts
     }
 
