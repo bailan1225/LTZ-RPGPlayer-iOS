@@ -93,7 +93,7 @@ enum GameDetector {
             return nil
         }
 
-        let isMV = firstExistingRoot("rpg_core.js") != nil
+        let isMV = firstExistingRoot(["rpg_core.js"]) != nil
         var libs: [String] = []
         if let f = firstExisting(["pixi.min.js", "pixi.js"], in: "libs") { libs.append(f) }
         if let f = firstExisting(["pixi-tilemap.min.js", "pixi-tilemap.js"], in: "libs") { libs.append(f) }
