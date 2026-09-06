@@ -100,6 +100,7 @@
     var opts = [1, 2, 4];
     var idx = opts.indexOf(cheat.speed);
     cheat.speed = opts[(idx + 1) % opts.length];
+    if (cheat.speed === 1) { removeSpeedWrapper(); } else { installSpeedWrapper(); }
     toast("游戏速度 x" + cheat.speed);
   }
 
@@ -140,17 +141,33 @@
     window.__rpgCheatBattlePatched = true;
   }
 
-  function applySpeedPatch() {
-    if (window.__rpgCheatSpeedPatched || typeof window.requestAnimationFrame !== "function") return;
-    var origRAF = window.requestAnimationFrame;
+  // 速度补丁：仅在开启加速时包装 requestAnimationFrame，速度回到 1x 立即恢复原样，
+  // 默认状态完全不介入游戏帧循环
+  var _origRAF = null;
+  var _rafWrapped = false;
+
+  function installSpeedWrapper() {
+    if (_rafWrapped) return;
+    if (typeof window.requestAnimationFrame !== "function") return;
+    _origRAF = window.requestAnimationFrame;
     window.requestAnimationFrame = function (cb) {
-      return origRAF.call(window, function (t) {
+      return _origRAF.call(window, function (t) {
         var times = cheat.speed;
-        if (times > 1) { for (var i = 0; i < times; i++) { try { cb(t); } catch (e) {} } }
-        else { cb(t); }
+        if (times > 1) {
+          for (var i = 0; i < times; i++) { try { cb(t); } catch (e) {} }
+        } else {
+          cb(t);
+        }
       });
     };
-    window.__rpgCheatSpeedPatched = true;
+    _rafWrapped = true;
+  }
+
+  function removeSpeedWrapper() {
+    if (_rafWrapped && _origRAF) {
+      window.requestAnimationFrame = _origRAF;
+      _rafWrapped = false;
+    }
   }
 
   // ---------- 浮层面板 ----------
@@ -227,7 +244,6 @@
     }
     applyEncounterPatch();
     applyBattlePatches();
-    applySpeedPatch();
     if (!window.__rpgCheatInit) {
       window.__rpgCheatInit = true;
       setTimeout(poll, 500);

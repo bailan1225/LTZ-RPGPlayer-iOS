@@ -1,6 +1,6 @@
 // RPG Player 内置翻译注入脚本（RPG Maker MV / MZ 通用）
-// 通过挂钩 Window_Base.drawTextEx，对带控制码的整段文本做缓存翻译；
-// 命中缓存同步替换，未命中则异步翻译后触发所在窗口刷新重绘。
+// 挂钩 Window_Base.drawTextEx：命中缓存/离线词典时同步替换文本；
+// 未命中时异步翻译，完成后延后一帧刷新所在窗口。所有路径均不向游戏抛出异常。
 (function () {
   "use strict";
   if (window.__rpgTrInjected) return;
@@ -16,7 +16,7 @@
     apiKey: cfg.apiKey || "",
     cacheVersion: cfg.cacheVersion || 1,
     translateUI: !!cfg.translateUI,
-    dictionary: cfg.dictionary || {}
+    dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {}
   };
   var cacheKey = "rpgTrCache_v" + state.cacheVersion + "_" + state.target;
   var cache = {};
@@ -36,9 +36,16 @@
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
   function keyOf(s) { return state.target + "|" + s; }
 
+  // 原型安全的词典读取：避免 "__proto__/constructor" 等键命中继承属性
+  function dictGet(s) {
+    try {
+      if (Object.prototype.hasOwnProperty.call(state.dictionary, s)) return state.dictionary[s];
+    } catch (e) {}
+    return undefined;
+  }
+
   var CODE_RE = /\\([A-Za-z]+)(\[[^\]]*\])?/g;
 
-  // 把文本切成「控制码 / 普通文本」片段
   function splitParts(text) {
     var parts = [], last = 0, m;
     CODE_RE.lastIndex = 0;
@@ -56,6 +63,17 @@
       .map(function (p) { return p.v; }).join("\u0001");
   }
 
+  function recombine(parts, tr) {
+    if (typeof tr !== "string") return null;
+    var arr = tr.split("\u0001");
+    var i = 0;
+    return parts.map(function (p) {
+      if (p.c === 1) return p.v;
+      var v = arr[i++];
+      return (v && v.length) ? v : p.v;
+    }).join("");
+  }
+
   function xhrGet(url, done) {
     var xhr = new XMLHttpRequest();
     try {
@@ -71,12 +89,13 @@
     } catch (e) { done(e); }
   }
 
-  // 纯文本翻译（不含控制码），离线词典优先，其次在线引擎
   function translatePlain(plain, done) {
     var trimmed = norm(plain);
     if (!trimmed) { done(null); return; }
-    if (state.dictionary[trimmed]) { done(state.dictionary[trimmed]); return; }
-    if (state.dictionary[plain]) { done(state.dictionary[plain]); return; }
+    var d1 = dictGet(trimmed);
+    var d2 = dictGet(plain);
+    if (typeof d1 === "string") { done(d1); return; }
+    if (typeof d2 === "string") { done(d2); return; }
     if (!state.enabled) { done(null); return; }
 
     if (state.engine === "mymemory") {
@@ -89,7 +108,7 @@
           var j = JSON.parse(text);
           if (j && j.responseData && j.responseData.translatedText) t = j.responseData.translatedText;
         } catch (e) {}
-        done(t && norm(t) !== trimmed ? norm(t) : null);
+        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
       });
       return;
     }
@@ -103,54 +122,23 @@
         var t = text;
         try {
           var j = JSON.parse(text);
-          if (j && j.translatedText) t = j.translatedText;
-          else if (j && j.translation) t = j.translation;
+          if (j && typeof j.translatedText === "string") t = j.translatedText;
+          else if (j && typeof j.translation === "string") t = j.translation;
           else if (typeof j === "string") t = j;
         } catch (e) {}
-        done(t && norm(t) !== trimmed ? norm(t) : null);
+        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
       });
       return;
     }
     done(null);
   }
 
-  // 整段文本（含控制码）的缓存翻译
-  function processText(text, done) {
-    var parts = splitParts(text);
-    var plain = plainOf(parts);
-    if (!norm(plain)) { done(null); return; }
-    var k = keyOf(norm(plain));
-    if (cache[k]) { done(cache[k]); return; }
-    if (sessionPending[k]) { done(null); return; }
-    sessionPending[k] = true;
-    translatePlain(plain, function (tr) {
-      delete sessionPending[k];
-      if (!tr) {
-        cache[k] = text;
-        saveCache();
-        done(null);
-        return;
-      }
-      var arr = tr.split("\u0001");
-      var i = 0;
-      var out = parts.map(function (p) {
-        if (p.c === 1) return p.v;
-        var v = arr[i++];
-        return v && v.length ? v : p.v;
-      }).join("");
-      if (out === text) { done(null); return; }
-      cache[k] = out;
-      saveCache();
-      done(out);
-    });
-  }
-
-  // 同步查缓存（供绘制时直接替换）
-  function cacheLookup(text) {
-    var parts = splitParts(text);
-    var plain = plainOf(parts);
-    if (!norm(plain)) return null;
-    return cache[keyOf(norm(plain))] || null;
+  function scheduleRefresh(self) {
+    setTimeout(function () {
+      try {
+        if (self && typeof self.refresh === "function") self.refresh();
+      } catch (e) {}
+    }, 0);
   }
 
   function patchDrawTextEx() {
@@ -160,23 +148,43 @@
     if (typeof orig !== "function") return false;
 
     Window_Base.prototype.drawTextEx = function (text, x, y) {
-      var self = this;
-      var useText = text;
-      if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
-        var hit = cacheLookup(text);
-        if (hit) {
-          useText = hit;
-        } else {
-          var original = text;
-          processText(original, function (tr) {
-            if (!tr || tr === original) return;
-            if (self && typeof self.refresh === "function") {
-              try { self.refresh(); } catch (e) {}
+      try {
+        var self = this;
+        var useText = text;
+        if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
+          var parts = splitParts(text);
+          var plain = plainOf(parts);
+          var normed = norm(plain);
+          if (normed) {
+            var k = keyOf(normed);
+            var hit = cache[k];
+            if (typeof hit === "string") {
+              useText = hit;
+            } else {
+              var sync = dictGet(normed) || dictGet(plain);
+              if (typeof sync === "string") {
+                var out = recombine(parts, sync);
+                if (out && out !== text) { cache[k] = out; saveCache(); useText = out; }
+              } else if (!sessionPending[k]) {
+                sessionPending[k] = true;
+                var origText = text;
+                translatePlain(plain, function (tr) {
+                  delete sessionPending[k];
+                  if (!tr || typeof tr !== "string") { cache[k] = origText; saveCache(); return; }
+                  var out2 = recombine(parts, tr);
+                  if (!out2 || out2 === origText) return;
+                  cache[k] = out2;
+                  saveCache();
+                  scheduleRefresh(self);
+                });
+              }
             }
-          });
+          }
         }
+        return orig.call(this, useText, x, y);
+      } catch (e) {
+        return orig.apply(this, arguments);
       }
-      return orig.call(this, useText, x, y);
     };
     window.__rpgTrPatched = true;
     return true;
@@ -187,11 +195,28 @@
     var orig = Bitmap.prototype.drawText;
     if (typeof orig !== "function") return;
     Bitmap.prototype.drawText = function (text, x, y, maxWidth, lineHeight, align) {
-      if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
-        var hit = cacheLookup(text);
-        if (hit) text = hit;
+      try {
+        if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
+          var parts = splitParts(text);
+          var plain = plainOf(parts);
+          var normed = norm(plain);
+          if (normed) {
+            var hit = cache[keyOf(normed)];
+            if (typeof hit === "string") {
+              text = hit;
+            } else {
+              var sync = dictGet(normed) || dictGet(plain);
+              if (typeof sync === "string") {
+                var out = recombine(parts, sync);
+                if (out) { cache[keyOf(normed)] = out; saveCache(); text = out; }
+              }
+            }
+          }
+        }
+        return orig.call(this, text, x, y, maxWidth, lineHeight, align);
+      } catch (e) {
+        return orig.apply(this, arguments);
       }
-      return orig.call(this, text, x, y, maxWidth, lineHeight, align);
     };
     window.__rpgTrBitmapPatched = true;
   }
@@ -224,4 +249,49 @@
       window.webkit.messageHandlers.rpgTr.postMessage({ type: "ready", state: window.RPGTranslator.getState() });
     }
   } catch (e) {}
+
+  // ---------- 错误上报（诊断用）：MV 报错页不显示错误文本，这里补上 ----------
+  (function () {
+    function showError(msg, stack) {
+      try {
+        var box = document.getElementById("rpgtr-error");
+        if (!box) {
+          box = document.createElement("div");
+          box.id = "rpgtr-error";
+          box.style.cssText = "position:fixed;top:8px;left:8px;right:8px;z-index:100001;" +
+            "background:rgba(120,20,20,0.95);color:#fff;padding:10px 12px;border-radius:10px;" +
+            "font:12px/1.5 -apple-system,sans-serif;white-space:pre-wrap;word-break:break-all;";
+          document.documentElement.appendChild(box);
+        }
+        box.textContent = "【游戏错误】" + (msg || "unknown") + (stack ? "\n" + stack : "");
+      } catch (e) {}
+    }
+    function patchCatch() {
+      if (!window.SceneManager || !SceneManager.catchException) return false;
+      if (window.__rpgTrErrorPatched) return true;
+      var orig = SceneManager.catchException;
+      SceneManager.catchException = function (e) {
+        try {
+          var msg = (e && (e.message || e.toString())) || "unknown";
+          showError(msg, e && e.stack);
+          try {
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.rpgTr) {
+              window.webkit.messageHandlers.rpgTr.postMessage({ type: "gameError", message: msg, stack: (e && e.stack) || "" });
+            }
+          } catch (_) {}
+        } catch (_) {}
+        return orig.apply(this, arguments);
+      };
+      window.__rpgTrErrorPatched = true;
+      return true;
+    }
+    try {
+      window.addEventListener("error", function (ev) {
+        showError(ev.message || "uncaught error", (ev.error && ev.error.stack) || "");
+      });
+    } catch (e) {}
+    (function pollCatch() {
+      if (!patchCatch() && !window.__rpgTrErrorPatched) setTimeout(pollCatch, 500);
+    })();
+  })();
 })();
