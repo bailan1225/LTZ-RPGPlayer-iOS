@@ -14,13 +14,13 @@ enum CrashReporter {
             let msg = "[NSException \(Date())] \(exc.name.rawValue): \(exc.reason ?? "nil")\n\(stack)\n"
             try? msg.write(to: CrashReporter.logURL, atomically: true, encoding: .utf8)
         }
-        signal(SIGABRT, CrashReporter.signalHandler)
-        signal(SIGSEGV, CrashReporter.signalHandler)
-        signal(SIGBUS, CrashReporter.signalHandler)
-        signal(SIGTRAP, CrashReporter.signalHandler)
+        signal(SIGABRT) { sig in CrashReporter.writeSignal(sig) }
+        signal(SIGSEGV) { sig in CrashReporter.writeSignal(sig) }
+        signal(SIGBUS) { sig in CrashReporter.writeSignal(sig) }
+        signal(SIGTRAP) { sig in CrashReporter.writeSignal(sig) }
     }
 
-    private static func signalHandler(_ sig: Int32) {
+    private static func writeSignal(_ sig: Int32) {
         let msg = "[SIGNAL \(sig) \(Date())] app crashed\n"
         try? msg.write(to: logURL, atomically: true, encoding: .utf8)
     }
