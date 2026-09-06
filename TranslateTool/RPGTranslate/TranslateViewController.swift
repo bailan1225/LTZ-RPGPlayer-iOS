@@ -107,9 +107,13 @@ final class TranslateViewController: UITableViewController {
     }
 
     private func exportGame() {
-        let ex = DataTranslator.exportGame(game, mapping: lastMapping)
-        let msg = ex.map { "已导出到：文件App → 我的 iPhone → RPG 翻译器 → Exports\n把 \(self.game.root.lastPathComponent) 文件夹拷贝/移动到「RPG Player」的文稿目录即可游玩。" }
-            ?? "导出失败，请重试。"
+        let msg: String
+        if let ex = DataTranslator.exportGame(game, mapping: lastMapping) {
+            _ = ex
+            msg = "已导出到：文件App → 我的 iPhone → RPG 翻译器 → Exports\n把 \(self.game.root.lastPathComponent) 文件夹拷贝/移动到「RPG Player」的文稿目录即可游玩。"
+        } else {
+            msg = "导出失败，请重试。"
+        }
         let alert = UIAlertController(title: "导出", message: msg, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default))
         present(alert, animated: true)
