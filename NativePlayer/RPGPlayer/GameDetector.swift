@@ -64,6 +64,30 @@ enum GameDetector {
         }
     }
 
+    /// 解析实际加载目标：优先 www 部署结构（index 与 data 同目录，读权限最小化），
+    /// 其次根 index.html + 根 data，最后兜底根 index 或自动生成
+    static func resolveLoadTarget(for dir: URL) -> (index: URL, readRoot: URL)? {
+        let fm = FileManager.default
+        let rootIndex = dir.appendingPathComponent("index.html")
+        let rootSystem = dir.appendingPathComponent("data/System.json")
+        let www = dir.appendingPathComponent("www")
+        let wwwIndex = www.appendingPathComponent("index.html")
+
+        // 优先 www 部署结构（MV/MZ 部署产物：index 与 data 都在 www 内）
+        if fm.fileExists(atPath: wwwIndex.path) {
+            return (wwwIndex, www)
+        }
+        // 开发结构：根 index + 根 data
+        if fm.fileExists(atPath: rootIndex.path), fm.fileExists(atPath: rootSystem.path) {
+            return (rootIndex, dir)
+        }
+        if fm.fileExists(atPath: rootIndex.path) {
+            return (rootIndex, dir)
+        }
+        guard let gen = ensureIndexHTML(for: dir) else { return nil }
+        return (gen, gen.deletingLastPathComponent())
+    }
+
     private static func hasCoreJS(_ dir: URL) -> Bool {
         let js = dir.appendingPathComponent("js")
         let fm = FileManager.default

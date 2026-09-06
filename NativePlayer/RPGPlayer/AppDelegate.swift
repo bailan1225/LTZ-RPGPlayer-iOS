@@ -7,6 +7,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        CrashReporter.install()
         // 首次启动默认值（register 不会覆盖用户已保存的设置）
         UserDefaults.standard.register(defaults: [
             "tr_enabled": true,

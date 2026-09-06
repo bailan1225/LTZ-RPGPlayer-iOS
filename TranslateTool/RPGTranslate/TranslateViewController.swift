@@ -29,7 +29,6 @@ final class TranslateViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = game.root.lastPathComponent
-        tableView = UITableView(frame: .zero, style: .insetGrouped)
         phaseLabel.numberOfLines = 0
         phaseLabel.font = .systemFont(ofSize: 13)
         phaseLabel.textColor = .secondaryLabel
