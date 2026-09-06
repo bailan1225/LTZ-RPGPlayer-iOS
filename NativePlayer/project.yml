@@ -1,0 +1,38 @@
+name: RPGPlayer
+options:
+  bundleIdPrefix: com.rpgplayer
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+targets:
+  RPGPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - path: RPGPlayer
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.rpgplayer.ios
+        PRODUCT_NAME: RPGPlayer
+        INFOPLIST_FILE: RPGPlayer/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+schemes:
+  RPGPlayer:
+    build:
+      targets:
+        RPGPlayer: all
+    run:
+      config: Debug
+    archive:
+      config: Release

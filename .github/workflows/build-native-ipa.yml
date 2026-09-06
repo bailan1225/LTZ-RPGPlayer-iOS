@@ -1,0 +1,58 @@
+name: Build native RPGPlayer IPA (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'NativePlayer/**'
+      - '.github/workflows/build-native-ipa.yml'
+
+concurrency:
+  group: build-native-ipa
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: NativePlayer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned (device)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project RPGPlayer.xcodeproj \
+            -scheme RPGPlayer \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          mkdir -p Payload
+          cp -R "build/Build/Products/Release-iphoneos/RPGPlayer.app" Payload/
+          zip -ry RPGPlayer-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RPGPlayer-unsigned-ipa
+          path: NativePlayer/RPGPlayer-unsigned.ipa
+          if-no-files-found: error

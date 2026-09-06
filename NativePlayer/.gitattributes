@@ -1,0 +1,10 @@
+* text=auto
+.github/workflows/* text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.js text eol=lf
+*.swift text eol=lf
+*.json text eol=lf
+*.plist text eol=lf
+*.md text eol=lf
+*.py text eol=lf
