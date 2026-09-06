@@ -1,7 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// 游戏列表：列出 Documents 下所有含 index.html 的游戏目录
+/// 游戏列表：递归扫描 Documents 下所有可识别的游戏目录（含 index.html 或 www）
 final class GamesViewController: UITableViewController, UIDocumentPickerDelegate {
 
     private var games: [URL] = []
@@ -18,6 +18,8 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
             name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+
     private static var documents: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -25,12 +27,39 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
     @objc private func refreshGames() {
         let docs = Self.documents
         let fm = FileManager.default
-        let all = (try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil,
-                                               options: [.skipsHiddenFiles])) ?? []
-        games = all
-            .filter { $0.hasDirectoryPath && fm.fileExists(atPath: $0.appendingPathComponent("index.html").path) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        var found: [URL] = []
+
+        func scan(_ dir: URL, _ depth: Int) {
+            guard depth <= 3 else { return }
+            let subs = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil,
+                                                    options: [.skipsHiddenFiles])) ?? []
+            for s in subs where s.hasDirectoryPath {
+                if GameDetector.isGameDir(s) {
+                    found.append(s)
+                } else {
+                    scan(s, depth + 1)
+                }
+            }
+        }
+
+        // Documents 根本身也可能是裸 www 游戏（js 直接铺在根下）
+        if GameDetector.isGameDir(docs) {
+            found.append(docs)
+        }
+        scan(docs, 1)
+
+        games = found.sorted { $0.path < $1.path }
         tableView.reloadData()
+    }
+
+    private func displayName(for url: URL) -> String {
+        let docs = Self.documents
+        if url.path == docs.path { return "（根目录）" }
+        if url.path.hasPrefix(docs.path + "/") {
+            let rel = String(url.path.dropFirst(docs.path.count + 1))
+            return rel
+        }
+        return url.lastPathComponent
     }
 
     @objc private func importGame() {
@@ -68,7 +97,7 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
             cell.textLabel?.textColor = .secondaryLabel
             cell.accessoryType = .none
         } else {
-            cell.textLabel?.text = games[indexPath.row].lastPathComponent
+            cell.textLabel?.text = displayName(for: games[indexPath.row])
             cell.textLabel?.textColor = .label
             cell.accessoryType = .disclosureIndicator
         }
@@ -83,6 +112,6 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "把含 index.html 的游戏文件夹放入：文件App → 我的 iPhone → RPG Player（或通过 iTunes 文件共享），回到本页自动刷新。"
+        "导入游戏（任选其一）：\n① App 内点右上角 +，在文件里选中游戏文件夹（含 index.html 或 www 均可，自动识别）\n② 文件App → 我的 iPhone → RPG Player，把整个游戏文件夹拷进来\n③ 爱思助手 → 应用 → RPG Player → 浏览，直接把游戏文件夹拖进 Documents\n\n游戏运行页为横屏。"
     }
 }

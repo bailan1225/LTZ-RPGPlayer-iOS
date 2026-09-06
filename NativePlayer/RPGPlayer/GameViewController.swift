@@ -25,9 +25,27 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         loadGame()
     }
 
+    // MARK: - 屏幕方向：游戏运行页强制横屏
+
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeLeft }
+    override var shouldAutorotate: Bool { true }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        forceOrientation(.landscapeLeft)
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
+        forceOrientation(.portrait)
+    }
+
+    private func forceOrientation(_ o: UIInterfaceOrientation) {
+        if UIDevice.current.orientation.rawValue != o.rawValue {
+            UIDevice.current.setValue(o.rawValue, forKey: "orientation")
+        }
     }
 
     private func setupWebView() {
@@ -102,10 +120,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func loadGame() {
-        let index = gameDir.appendingPathComponent("index.html")
-        guard FileManager.default.fileExists(atPath: index.path) else {
-            let alert = UIAlertController(title: "缺少 index.html",
-                                          message: "\(gameDir.lastPathComponent) 不是有效的 MV/MZ 游戏目录。",
+        guard let index = GameDetector.ensureIndexHTML(for: gameDir) else {
+            let alert = UIAlertController(title: "无法识别游戏目录",
+                                          message: "\(gameDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
                                           preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .default))
             present(alert, animated: true)
