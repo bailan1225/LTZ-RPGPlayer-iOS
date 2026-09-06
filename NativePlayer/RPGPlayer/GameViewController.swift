@@ -42,7 +42,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         contentController.addUserScript(WKUserScript(
             source: TranslatorJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 3) 注入作弊器脚本
+        contentController.addUserScript(WKUserScript(
+            source: CheatJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         contentController.add(self, name: "rpgTr")
+        contentController.add(self, name: "rpgCheat")
 
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
@@ -69,8 +74,17 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleTranslate))
         toggle.tintColor = defaults.bool(forKey: "tr_enabled") ? .systemBlue : .secondaryLabel
         toggle.accessibilityLabel = "翻译开关"
-        toolbarItems = [reload, .flexibleSpace(), toggle]
+        let cheat = UIBarButtonItem(
+            image: UIImage(systemName: "gift"),
+            style: .plain, target: self, action: #selector(toggleCheat))
+        cheat.tintColor = .systemOrange
+        cheat.accessibilityLabel = "作弊器"
+        toolbarItems = [reload, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
+    }
+
+    @objc private func toggleCheat() {
+        webView.evaluateJavaScript("window.RPGCheat && window.RPGCheat.toggle();") { _, _ in }
     }
 
     @objc private func reload() {

@@ -8,3 +8,6 @@
 *.plist text eol=lf
 *.md text eol=lf
 *.py text eol=lf
+*.png binary
+*.ipa binary
+*.zip binary

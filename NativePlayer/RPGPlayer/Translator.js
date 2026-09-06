@@ -13,6 +13,7 @@
     source: cfg.source || "ja",
     target: cfg.target || "zh-CN",
     apiUrl: cfg.apiUrl || "",
+    apiKey: cfg.apiKey || "",
     cacheVersion: cfg.cacheVersion || 1,
     translateUI: !!cfg.translateUI,
     dictionary: cfg.dictionary || {}
@@ -96,6 +97,7 @@
       var api = state.apiUrl;
       if (!api) { done(null); return; }
       api = api.replace("{text}", encodeURIComponent(trimmed));
+      api = api.replace("{key}", encodeURIComponent(state.apiKey || ""));
       xhrGet(api, function (err, text) {
         if (err || !text) { done(null); return; }
         var t = text;

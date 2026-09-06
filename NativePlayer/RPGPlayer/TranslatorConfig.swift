@@ -28,6 +28,7 @@ enum TranslatorConfig {
             "source": defaults.string(forKey: "tr_source") ?? "ja",
             "target": defaults.string(forKey: "tr_target") ?? "zh-CN",
             "apiUrl": defaults.string(forKey: "tr_api_url") ?? "",
+            "apiKey": defaults.string(forKey: "tr_api_key") ?? "",
             "cacheVersion": defaults.integer(forKey: "tr_cache_version"),
             "translateUI": false,
             "dictionary": dict
@@ -46,6 +47,17 @@ enum TranslatorJS {
         guard let url = Bundle.main.url(forResource: "Translator", withExtension: "js"),
               let s = try? String(contentsOf: url, encoding: .utf8) else {
             return "// Translator.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 Cheat.js 注入脚本
+enum CheatJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "Cheat", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// Cheat.js missing"
         }
         return s
     }

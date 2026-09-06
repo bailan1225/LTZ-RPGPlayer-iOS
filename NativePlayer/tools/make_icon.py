@@ -1,5 +1,6 @@
 """Generate a 1024x1024 pixel-art style app icon PNG (pure stdlib)."""
 import math
+import os
 import struct
 import zlib
 
@@ -73,8 +74,8 @@ png += chunk(b"IHDR", struct.pack(">IIBBBBB", W, H, 8, 6, 0, 0, 0))
 png += chunk(b"IDAT", zlib.compress(raw, 9))
 png += chunk(b"IEND", b"")
 
-out = r"C:\Users\admin\Desktop\new\ipa\RPGPlayer\RPGPlayer\Assets.xcassets\AppIcon.appiconset\icon-1024.png"
-import os
+out = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                   "RPGPlayer", "Assets.xcassets", "AppIcon.appiconset", "icon-1024.png")
 os.makedirs(os.path.dirname(out), exist_ok=True)
 with open(out, "wb") as f:
     f.write(png)
