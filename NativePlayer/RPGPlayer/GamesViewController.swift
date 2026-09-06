@@ -1,8 +1,7 @@
 import UIKit
-import UniformTypeIdentifiers
 
 /// 游戏列表：递归扫描 Documents 下所有可识别的游戏目录（含 index.html 或 www）
-final class GamesViewController: UITableViewController, UIDocumentPickerDelegate {
+final class GamesViewController: UITableViewController {
 
     private var games: [URL] = []
 
@@ -62,26 +61,18 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
         return url.lastPathComponent
     }
 
+    /// iOS 17 侧载环境下系统文件夹选择器会闪退，这里不直接弹选择器，
+    /// 改为导入指南 + 刷新（文件App / 爱思助手直拖是最稳妥的导入方式）
     @objc private func importGame() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = true
-        present(picker, animated: true)
-    }
-
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        let docs = Self.documents
-        let fm = FileManager.default
-        for url in urls {
-            let target = docs.appendingPathComponent(url.lastPathComponent)
-            try? fm.removeItem(at: target)
-            do {
-                try fm.moveItem(at: url, to: target)
-            } catch {
-                try? fm.copyItem(at: url, to: target)
-            }
-        }
-        refreshGames()
+        let alert = UIAlertController(
+            title: "导入游戏",
+            message: "把游戏文件夹放入本 App 的文稿目录（自动识别 index.html / www / 裸 www）：\n\n① 文件App：打开「文件」→「我的 iPhone」→「RPG Player」，把整个游戏文件夹拷入\n\n② 爱思助手：连接设备 → 应用 → RPG Player → 浏览 → 把游戏文件夹直接拖进 Documents\n\n拷入后点「刷新列表」即可自动识别。",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "刷新列表", style: .default) { [weak self] _ in
+            self?.refreshGames()
+        })
+        alert.addAction(UIAlertAction(title: "好", style: .cancel))
+        present(alert, animated: true)
     }
 
     // MARK: - Table view
@@ -112,6 +103,6 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "导入游戏（任选其一）：\n① App 内点右上角 +，在文件里选中游戏文件夹（含 index.html 或 www 均可，自动识别）\n② 文件App → 我的 iPhone → RPG Player，把整个游戏文件夹拷进来\n③ 爱思助手 → 应用 → RPG Player → 浏览，直接把游戏文件夹拖进 Documents\n\n游戏运行页为横屏。"
+        "导入游戏：文件App 或爱思助手把游戏文件夹放入本 App 的 Documents（含 index.html 或 www 均可，自动识别），回本 App 点右上角 + 选「刷新列表」。\n\n游戏运行页为横屏。"
     }
 }

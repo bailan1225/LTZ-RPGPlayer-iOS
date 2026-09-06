@@ -1,8 +1,7 @@
 import UIKit
-import UniformTypeIdentifiers
 
 /// 游戏列表：识别 Documents 下所有含 data/System.json 的 MV/MZ 游戏
-final class GameListViewController: UITableViewController, UIDocumentPickerDelegate {
+final class GameListViewController: UITableViewController {
 
     private var games: [GameInfo] = []
 
@@ -36,26 +35,18 @@ final class GameListViewController: UITableViewController, UIDocumentPickerDeleg
         return info.root.lastPathComponent
     }
 
+    /// iOS 17 侧载环境下系统文件夹选择器会闪退，这里不直接弹选择器，
+    /// 改为导入指南 + 刷新（文件App / 爱思助手直拖是最稳妥的导入方式）
     @objc private func importGame() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: true)
-        picker.delegate = self
-        picker.allowsMultipleSelection = true
-        present(picker, animated: true)
-    }
-
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        let docs = Self.documents
-        let fm = FileManager.default
-        for url in urls {
-            let target = docs.appendingPathComponent(url.lastPathComponent)
-            try? fm.removeItem(at: target)
-            do {
-                try fm.moveItem(at: url, to: target)
-            } catch {
-                try? fm.copyItem(at: url, to: target)
-            }
-        }
-        refresh()
+        let alert = UIAlertController(
+            title: "导入游戏",
+            message: "把含 www/data（或 data）的游戏文件夹放入本 App 的文稿目录：\n\n① 文件App：打开「文件」→「我的 iPhone」→「RPG 翻译器」，把整个游戏文件夹拷入\n\n② 爱思助手：连接设备 → 应用 → RPG 翻译器 → 浏览 → 把游戏文件夹直接拖进 Documents\n\n拷入后点「刷新列表」即可自动识别 MV/MZ。",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "刷新列表", style: .default) { [weak self] _ in
+            self?.refresh()
+        })
+        alert.addAction(UIAlertAction(title: "好", style: .cancel))
+        present(alert, animated: true)
     }
 
     // MARK: - Table
