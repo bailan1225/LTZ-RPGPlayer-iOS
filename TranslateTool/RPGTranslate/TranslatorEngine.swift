@@ -214,7 +214,8 @@ final class TranslatorEngine {
         case .aqua:
             // AQUA 网关（acu.ltzy.top）：OpenAI 兼容，免费模型直用，默认 glm-4-flash
             let aquaURL = "https://api.ltzy.top/v1/chat/completions"
-            let aquaModel = config.model.isEmpty ? "glm-4-flash" : config.model
+            // 默认选免费+健康分高+翻译质量好的 glm-4-flash-250414；勿用收费 aqua/deepseek-v4-flash
+            let aquaModel = config.model.isEmpty ? "glm-4-flash-250414" : config.model
             var body: [String: Any] = [
                 "model": aquaModel,
                 "messages": [

@@ -31,7 +31,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         targetField = makeField(placeholder: "如 zh-CN", text: defaults.string(forKey: "tr_target") ?? "zh-CN", secure: false)
         urlField = makeField(placeholder: "https://api.deepseek.com/v1/chat/completions", text: defaults.string(forKey: "tr_api_url") ?? "", secure: false)
         keyField = makeField(placeholder: "API Key（旧 key 过期直接重填）", text: defaults.string(forKey: "tr_api_key") ?? "", secure: true)
-        modelField = makeField(placeholder: "如 glm-4-flash / agnes-2.5-flash / deepseek-chat", text: defaults.string(forKey: "tr_model") ?? "", secure: false)
+        modelField = makeField(placeholder: "如 glm-4-flash-250414 / agnes-2.5-flash / qwen2-7b-instruct", text: defaults.string(forKey: "tr_model") ?? "", secure: false)
         memEmailField = makeField(placeholder: "MyMemory 注册邮箱（免费提额）", text: defaults.string(forKey: "tr_mem_email") ?? "", secure: false)
         promptField = makeField(placeholder: "如：你是游戏翻译，保持 JRPG 风格，人名不译", text: defaults.string(forKey: "tr_prompt") ?? "", secure: false)
     }
@@ -113,7 +113,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 0:
-            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：固定地址 https://api.ltzy.top/v1/chat/completions，模型默认 glm-4-flash，Key 在 acu.ltzy.top/console 创建（sk-），绝大多数模型免费。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：固定地址 https://api.ltzy.top/v1/chat/completions，默认模型 glm-4-flash-250414（免费、健康分高、翻译质量好）；可换 qwen2-7b-instruct / kimi-k3 / minimax-m3 等免费模型；唯一收费模型 aqua/deepseek-v4-flash 已默认避开。Key 在 acu.ltzy.top/console 创建（sk-）。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         case 4:
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
