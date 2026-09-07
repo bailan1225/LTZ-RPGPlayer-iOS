@@ -36,7 +36,7 @@ struct TranslateSummary {
     var translatedUnique = 0
     var failedUnique = 0
     var mapping: [String: String] = [:]
-    var lastError = """
+    var lastError = ""
 }
 
 /// 进度回调
