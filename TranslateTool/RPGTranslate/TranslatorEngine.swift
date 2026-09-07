@@ -170,8 +170,13 @@ final class TranslatorEngine {
                 "temperature": 0.3
             ]
             if !config.model.isEmpty { body["model"] = config.model }
+            // 自动补全：用户常填 base（如 https://api.ltzy.top/v1），缺 /chat/completions 会 404
+            var endpoint = config.apiUrl
+            if !endpoint.contains("/chat/completions") {
+                endpoint += (endpoint.hasSuffix("/") ? "" : "/") + "chat/completions"
+            }
             guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
-                  let url = URL(string: config.apiUrl) else { completion(nil); return }
+                  let url = URL(string: endpoint) else { completion(nil); return }
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -230,7 +235,7 @@ final class TranslatorEngine {
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.setValue("Bearer (config.apiKey)", forHTTPHeaderField: "Authorization")
+            req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             req.httpBody = bodyData
             session.dataTask(with: req) { [weak self] data, _, err in
                 guard let data = data else {

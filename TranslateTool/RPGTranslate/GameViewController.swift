@@ -138,7 +138,20 @@ final class LocalHTTPServer {
     private func buildIndexIfNeeded() {
         guard !indexBuilt else { return }
         indexBuilt = true
-        var index: [String: URL] = [:]
+        // 持久化索引：.rpgcache/fi-<根目录签名>.json（游戏目录两次打开间不变，免去每次全树扫描）
+        let cacheParent = root.deletingLastPathComponent()
+        let cacheDir = cacheParent.appendingPathComponent(".rpgcache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let sig = shallowSignature(root)
+        let idxURL = cacheDir.appendingPathComponent("fi-\(sig).json")
+        if let data = try? Data(contentsOf: idxURL),
+           let rels = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            var index: [String: URL] = [:]
+            for rel in rels { index[rel.lowercased()] = root.appendingPathComponent(rel) }
+            fileIndex = index
+            return
+        }
+        var rels: [String] = []
         var stack = [root]
         while let dir = stack.popLast() {
             guard let items = try? FileManager.default.contentsOfDirectory(
@@ -149,12 +162,27 @@ final class LocalHTTPServer {
                     if isDir.boolValue {
                         stack.append(item)
                     } else {
-                        index[item.lastPathComponent.lowercased()] = item
+                        let rel = item.path.hasPrefix(root.path + "/")
+                            ? String(item.path.dropFirst((root.path + "/").count))
+                            : item.lastPathComponent
+                        rels.append(rel)
                     }
                 }
             }
         }
+        var index: [String: URL] = [:]
+        for rel in rels { index[rel.lowercased()] = root.appendingPathComponent(rel) }
         fileIndex = index
+        if let data = try? JSONSerialization.data(withJSONObject: rels) {
+            try? data.write(to: idxURL, options: .atomic)
+        }
+    }
+
+    private func shallowSignature(_ dir: URL) -> String {
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return "?" }
+        let names = items.map { $0.lastPathComponent }.sorted()
+        return String(names.joined(separator: ",").hashValue & 0xffffffff, radix: 16)
     }
 
     private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
