@@ -153,7 +153,7 @@ final class TranslatorEngine {
                 if urlStr.contains("{model}") {
                     urlStr = urlStr.replacingOccurrences(of: "{model}", with: percentEncode(config.model))
                 }
-                request(URL(string: urlStr), parse: parseCustom, completion: finish)
+                request(URL(string: urlStr), parse: { [weak self] data in self?.parseCustom(data) }, completion: finish)
                 return
             }
             // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
@@ -174,9 +174,9 @@ final class TranslatorEngine {
                 req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             }
             req.httpBody = bodyData
-            session.dataTask(with: req) { data, _, _ in
+            session.dataTask(with: req) { [weak self] data, _, _ in
                 guard let data = data else { completion(nil); return }
-                completion(parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
             completion(nil)
