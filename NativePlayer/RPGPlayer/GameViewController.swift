@@ -138,6 +138,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         // allowingReadAccessTo 必须是目录 URL（尾斜杠），否则子资源读取被拒
         let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
         let rootDir = URL(fileURLWithPath: rootStr, isDirectory: true)
+        // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
+        GameDetector.fixPluginAliases(in: target.readRoot)
         webView.loadFileURL(target.index, allowingReadAccessTo: rootDir)
     }
 

@@ -97,9 +97,73 @@ enum GameDetector {
         return false
     }
 
+    // MARK: - 多语言插件名修复（日文/中文/语言后缀的 js 文件名）
+
+    /// 常见语言后缀（插件文件名本地化变体，如 YEP_CoreEngine_zh.js / _ja.js）
+    private static let langSuffixes = ["ja", "jp", "jap", "zh", "zhs", "zht", "cn", "chi",
+                                       "chs", "cht", "en", "eng", "ko", "kr", "de", "fr",
+                                       "es", "it", "ru", "tw", "hk"]
+
+    /// 去掉尾部语言后缀：YEP_CoreEngine_zh → yep_coreengine
+    private static func stripLang(_ s: String) -> String {
+        let parts = s.components(separatedBy: CharacterSet(charactersIn: "_-"))
+        if parts.count > 1, let last = parts.last, langSuffixes.contains(last.lowercased()) {
+            return parts.dropLast().joined(separator: "_")
+        }
+        return s
+    }
+
+    /// 插件名与文件名是否匹配（大小写不敏感 + 忽略语言后缀）
+    private static func pluginNameMatches(_ name: String, _ base: String) -> Bool {
+        let a = name.lowercased()
+        let b = base.lowercased()
+        if a == b { return true }
+        let sa = stripLang(a), sb = stripLang(b)
+        return sa == b || a == sb || sa == sb
+    }
+
+    /// 插件别名修复：plugins.js 引用的插件名与实际文件（含日文/中文/语言后缀变体）不匹配时，
+    /// 在 js/plugins/ 下建立硬链接别名（同卷安全、不复制内容、不修改原文件），保证
+    /// loadScript('js/plugins/<name>.js') 能找到——修复"Failed to load: js/plugins/xxx.js"类白屏/报错。
+    /// 幂等：目标已存在则跳过；每次启动游戏前调用。
+    static func fixPluginAliases(in root: URL) {
+        let fm = FileManager.default
+        let jsDir = root.appendingPathComponent("js")
+        let pluginsJS = jsDir.appendingPathComponent("plugins.js")
+        let pluginsDir = jsDir.appendingPathComponent("plugins", isDirectory: true)
+        guard fm.fileExists(atPath: pluginsJS.path),
+              fm.fileExists(atPath: pluginsDir.path),
+              let data = try? Data(contentsOf: pluginsJS),
+              let text = String(data: data, encoding: .utf8),
+              let regex = try? NSRegularExpression(pattern: "\"name\"\\s*:\\s*\"([^\"]+)\"")
+        else { return }
+
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let names = regex.matches(in: text, range: range).compactMap { m -> String? in
+            guard let r = Range(m.range(at: 1), in: text) else { return nil }
+            return String(text[r])
+        }
+        guard !names.isEmpty,
+              let files = try? fm.contentsOfDirectory(at: pluginsDir, includingPropertiesForKeys: nil)
+        else { return }
+
+        for name in names {
+            guard !name.isEmpty else { continue }
+            let target = pluginsDir.appendingPathComponent(name + ".js")
+            if fm.fileExists(atPath: target.path) { continue }
+            guard let cand = files.first(where: {
+                $0.pathExtension.lowercased() == "js" &&
+                pluginNameMatches(name, $0.deletingPathExtension().lastPathComponent)
+            }) else { continue }
+            // 硬链接优先（同卷零拷贝），失败退回复制
+            do { try fm.linkItem(at: cand, to: target) } catch {
+                try? fm.copyItem(at: cand, to: target)
+            }
+        }
+    }
+
     /// 按实际存在的文件生成 MV/MZ 标准 index.html
-    private static func indexHTMLTemplate(for dir: URL) -> String {
-        let jsDir = dir.appendingPathComponent("js")
+    private static func indexHTMLTemplate(for dir: URL) -> String {        let jsDir = dir.appendingPathComponent("js")
         let fm = FileManager.default
 
         func firstExisting(_ names: [String], in sub: String) -> String? {
