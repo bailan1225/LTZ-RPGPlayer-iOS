@@ -28,7 +28,9 @@
 
 1. **导入游戏**：把含 `www/data`（或 `data`）的游戏文件夹放进 App 文稿目录（文件App → 我的 iPhone → RPG 翻译器；或爱思助手直拖 Documents）；含 `[ ]` 空格等特殊字符的文件夹名会在播放时自动改安全名，不影响显示
 2. 点游戏 →「**▶ 播放游戏（带翻译+作弊器）**」直接开玩；或「翻译 / 校对 / 导出」进批量翻译
-3. **翻译设置**（第二个 Tab）：运行时翻译开关、引擎（离线词典 / MyMemory 免费在线 / 自定义API）、源/目标语言、API 地址与 Key
+3. **翻译设置**（第二个 Tab）：运行时翻译开关、引擎（离线词典 / MyMemory 免费在线 / 自定义API）、源/目标语言、API 地址、Key、**模型**、提示词、**MyMemory 邮箱（免费提额）**
+   - **MyMemory**：免费匿名约 5000 字符/天；在 MyMemory 官网免费注册后，把邮箱填到设置里可提升到约 5 万字符/天
+   - **自定义 API**：兼容两种方式——① URL 占位符（地址含 `{text}`，可选 `{key}` `{prompt}` `{model}`）；② **OpenAI 兼容接口（推荐）**：地址填 `https://…/chat/completions`（DeepSeek/通义/OpenAI/硅基流动等），自动 POST JSON（model、messages、提示词），Key 走 Bearer，返回 `choices[0].message.content`；API 地址/Key/模型编辑即存，切页自动保存
 4. 点「开始翻译」→ 进度条实时显示；**自动备份原 data** 到 Backups，可随时「恢复原版」
 5. 完成后点「**导出到文件App**」→ 整份游戏复制到 `Exports/`，同时生成 `游戏名_翻译映射.json`
 6. 翻译结果自动保存为 `translations/游戏名.json`（mtool 格式）——**播放游戏时直接离线命中，不需要重新生成游戏**

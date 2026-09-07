@@ -14,6 +14,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             "tr_target": "zh-CN",
             "tr_api_url": "",
             "tr_api_key": "",
+            "tr_model": "",
+            "tr_mem_email": "",
             "tr_enabled": true,
             "tr_cache_version": 0,
             "tr_prompt": ""

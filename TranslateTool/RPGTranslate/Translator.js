@@ -15,6 +15,8 @@
     apiUrl: cfg.apiUrl || "",
     apiKey: cfg.apiKey || "",
     prompt: cfg.prompt || "",
+    model: cfg.model || "",
+    memEmail: cfg.memEmail || "",
     cacheVersion: cfg.cacheVersion || 1,
     translateUI: !!cfg.translateUI,
     dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {}
@@ -90,6 +92,24 @@
     } catch (e) { done(e); }
   }
 
+  // OpenAI 兼容接口：POST JSON + Bearer Key
+  function xhrPostJSON(url, bodyObj, apiKey, done) {
+    var xhr = new XMLHttpRequest();
+    try {
+      xhr.open("POST", url, true);
+      xhr.timeout = 20000;
+      xhr.setRequestHeader("Content-Type", "application/json");
+      if (apiKey) xhr.setRequestHeader("Authorization", "Bearer " + apiKey);
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) done(null, xhr.responseText);
+        else done(new Error("HTTP " + xhr.status + " " + String(xhr.responseText).slice(0, 120)));
+      };
+      xhr.onerror = function () { done(new Error("network")); };
+      xhr.ontimeout = function () { done(new Error("timeout")); };
+      xhr.send(JSON.stringify(bodyObj));
+    } catch (e) { done(e); }
+  }
+
   function translatePlain(plain, done) {
     var trimmed = norm(plain);
     if (!trimmed) { done(null); return; }
@@ -102,6 +122,7 @@
     if (state.engine === "mymemory") {
       var url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(trimmed) +
         "&langpair=" + encodeURIComponent(state.source + "|" + state.target);
+      if (state.memEmail) url += "&de=" + encodeURIComponent(state.memEmail);
       xhrGet(url, function (err, text) {
         if (err || !text) { done(null); return; }
         var t = text;
@@ -116,15 +137,42 @@
     if (state.engine === "custom") {
       var api = state.apiUrl;
       if (!api) { done(null); return; }
-      api = api.replace("{text}", encodeURIComponent(trimmed));
-      api = api.replace("{key}", encodeURIComponent(state.apiKey || ""));
-      api = api.replace("{prompt}", encodeURIComponent(state.prompt || ""));
-      xhrGet(api, function (err, text) {
+      // 模式A：URL 含 {text} → 替换占位符（兼容老模板）
+      if (api.indexOf("{text}") !== -1) {
+        api = api.replace("{text}", encodeURIComponent(trimmed));
+        api = api.replace("{key}", encodeURIComponent(state.apiKey || ""));
+        api = api.replace("{prompt}", encodeURIComponent(state.prompt || ""));
+        api = api.replace("{model}", encodeURIComponent(state.model || ""));
+        xhrGet(api, function (err, text) {
+          if (err || !text) { done(null); return; }
+          var t = text;
+          try {
+            var j = JSON.parse(text);
+            if (j && j.choices && j.choices[0] && j.choices[0].message && typeof j.choices[0].message.content === "string") t = j.choices[0].message.content;
+            else if (j && typeof j.translatedText === "string") t = j.translatedText;
+            else if (j && typeof j.translation === "string") t = j.translation;
+            else if (typeof j === "string") t = j;
+          } catch (e) {}
+          done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
+        });
+        return;
+      }
+      // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
+      var bodyObj = {
+        messages: [
+          { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
+          { role: "user", content: trimmed }
+        ],
+        temperature: 0.3
+      };
+      if (state.model) bodyObj.model = state.model;
+      xhrPostJSON(api, bodyObj, state.apiKey || "", function (err, text) {
         if (err || !text) { done(null); return; }
         var t = text;
         try {
           var j = JSON.parse(text);
-          if (j && typeof j.translatedText === "string") t = j.translatedText;
+          if (j && j.choices && j.choices[0] && j.choices[0].message && typeof j.choices[0].message.content === "string") t = j.choices[0].message.content;
+          else if (j && typeof j.translatedText === "string") t = j.translatedText;
           else if (j && typeof j.translation === "string") t = j.translation;
           else if (typeof j === "string") t = j;
         } catch (e) {}

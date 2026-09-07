@@ -9,6 +9,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     private var targetField: UITextField!
     private var urlField: UITextField!
     private var keyField: UITextField!
+    private var modelField: UITextField!
+    private var memEmailField: UITextField!
     private var promptField: UITextField!
     private var enabledSwitch: UISwitch!
 
@@ -27,8 +29,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
         sourceField = makeField(placeholder: "如 ja / en", text: defaults.string(forKey: "tr_source") ?? "ja", secure: false)
         targetField = makeField(placeholder: "如 zh-CN", text: defaults.string(forKey: "tr_target") ?? "zh-CN", secure: false)
-        urlField = makeField(placeholder: "https://…?q={text}&key={key}", text: defaults.string(forKey: "tr_api_url") ?? "", secure: false)
+        urlField = makeField(placeholder: "https://api.deepseek.com/v1/chat/completions", text: defaults.string(forKey: "tr_api_url") ?? "", secure: false)
         keyField = makeField(placeholder: "API Key（旧 key 过期直接重填）", text: defaults.string(forKey: "tr_api_key") ?? "", secure: true)
+        modelField = makeField(placeholder: "如 deepseek-chat / gpt-4o-mini", text: defaults.string(forKey: "tr_model") ?? "", secure: false)
+        memEmailField = makeField(placeholder: "MyMemory 注册邮箱（免费提额）", text: defaults.string(forKey: "tr_mem_email") ?? "", secure: false)
         promptField = makeField(placeholder: "如：你是游戏翻译，保持 JRPG 风格，人名不译", text: defaults.string(forKey: "tr_prompt") ?? "", secure: false)
     }
 
@@ -54,10 +58,16 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     }
 
     @objc private func fieldChanged() {
+        saveAllFields()
+    }
+
+    private func saveAllFields() {
         defaults.set(sourceField.text ?? "", forKey: "tr_source")
         defaults.set(targetField.text ?? "", forKey: "tr_target")
         defaults.set(urlField.text ?? "", forKey: "tr_api_url")
         defaults.set(keyField.text ?? "", forKey: "tr_api_key")
+        defaults.set(modelField.text ?? "", forKey: "tr_model")
+        defaults.set(memEmailField.text ?? "", forKey: "tr_mem_email")
         defaults.set(promptField.text ?? "", forKey: "tr_prompt")
     }
 
@@ -66,15 +76,24 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         return true
     }
 
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        saveAllFields()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        saveAllFields()
+    }
+
     // MARK: - Table
 
     override func numberOfSections(in tableView: UITableView) -> Int { 4 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
-        case 0: return 2
+        case 0: return 3
         case 1: return 2
-        case 2: return 3
+        case 2: return 4
         case 3: return 2
         default: return 0
         }
@@ -92,7 +111,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
-        case 0: return "MyMemory 免费接口有每日限额；自定义API 地址中 {text} 为原文、{key} 为密钥占位符；「翻译提示词」用 {prompt} 占位符附加到请求（对应 AiNiee 提示词优化，不填则不带）。返回 JSON 的 translatedText / translation 字段或纯文本。"
+        case 0:
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON（含 model、messages、提示词），Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等，返回 choices[0].message.content。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         default: return nil
         }
@@ -114,6 +134,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case (0, 1):
             cell.textLabel?.text = "运行时翻译（播放游戏时）"
             cell.accessoryView = enabledSwitch
+        case (0, 2):
+            cell.textLabel?.text = "MyMemory 邮箱"
+            cell.accessoryView = memEmailField
+            memEmailField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)
         case (1, 0):
             cell.textLabel?.text = "源语言"
             cell.accessoryView = sourceField
@@ -131,6 +155,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.accessoryView = keyField
             keyField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
         case (2, 2):
+            cell.textLabel?.text = "模型"
+            cell.accessoryView = modelField
+            modelField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
+        case (2, 3):
             cell.textLabel?.text = "翻译提示词"
             cell.accessoryView = promptField
             promptField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)

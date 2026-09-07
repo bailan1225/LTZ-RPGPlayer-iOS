@@ -13,7 +13,9 @@ struct TranslationConfig {
     var target = "zh-CN"
     var apiUrl = ""
     var apiKey = ""
-    var prompt = ""   // 自定义 API 翻译风格提示词（AiNiee 思路），用 {prompt} 占位符附加
+    var prompt = ""    // 自定义 API 翻译风格提示词（AiNiee 思路），用 {prompt} 占位符附加
+    var model = ""     // 自定义 API 模型名（OpenAI 兼容接口），用 {model} 占位符或 POST body.model
+    var memEmail = ""  // MyMemory 注册邮箱：免费额度从 ~5000 字符/天提升到 ~50000 字符/天
 }
 
 /// 批量翻译引擎：内置离线词典 + MyMemory 在线接口 + 自定义 API
@@ -120,10 +122,12 @@ final class TranslatorEngine {
         switch config.engine {
         case .mymemory:
             var comps = URLComponents(string: "https://api.mymemory.translated.net/get")!
-            comps.queryItems = [
+            var items = [
                 URLQueryItem(name: "q", value: String(text.prefix(maxTextLength))),
                 URLQueryItem(name: "langpair", value: "\(source)|\(target)")
             ]
+            if !config.memEmail.isEmpty { items.append(URLQueryItem(name: "de", value: config.memEmail)) }
+            comps.queryItems = items
             request(comps.url, parse: { data in
                 guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let rd = obj["responseData"] as? [String: Any],
@@ -132,30 +136,69 @@ final class TranslatorEngine {
             }, completion: finish)
         case .custom:
             guard !config.apiUrl.isEmpty else { completion(nil); return }
-            var urlStr = config.apiUrl
-                .replacingOccurrences(of: "{text}", with: percentEncode(String(text.prefix(maxTextLength))))
-                .replacingOccurrences(of: "{key}", with: percentEncode(config.apiKey))
-                .replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
-            // 兜底：若模板未替换成功（缺占位符），以 query 附加
-            if urlStr.contains("{text}") {
-                urlStr = urlStr.replacingOccurrences(of: "{text}", with: percentEncode(text))
-            }
-            if urlStr.contains("{prompt}") {
-                urlStr = urlStr.replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
-            }
-            request(URL(string: urlStr), parse: { data in
-                guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    // 可能是纯文本响应
-                    return String(data: data, encoding: .utf8)
+            let capped = String(text.prefix(maxTextLength))
+            // 模式A：URL 含 {text} 占位符 → 直接替换占位符（兼容老用户模板）
+            if config.apiUrl.contains("{text}") {
+                var urlStr = config.apiUrl
+                    .replacingOccurrences(of: "{text}", with: percentEncode(capped))
+                    .replacingOccurrences(of: "{key}", with: percentEncode(config.apiKey))
+                    .replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
+                    .replacingOccurrences(of: "{model}", with: percentEncode(config.model))
+                if urlStr.contains("{text}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{text}", with: percentEncode(capped))
                 }
-                if let t = obj["translatedText"] as? String { return t }
-                if let t = obj["translation"] as? String { return t }
-                if let t = obj["data"] as? [String: Any], let s = t["translations"] as? [[String: Any]], let x = s.first?["translatedText"] as? String { return x }
-                return nil
-            }, completion: finish)
+                if urlStr.contains("{prompt}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
+                }
+                if urlStr.contains("{model}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{model}", with: percentEncode(config.model))
+                }
+                request(URL(string: urlStr), parse: parseCustom, completion: finish)
+                return
+            }
+            // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
+            var body: [String: Any] = [
+                "messages": [
+                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                    ["role": "user", "content": capped]
+                ],
+                "temperature": 0.3
+            ]
+            if !config.model.isEmpty { body["model"] = config.model }
+            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+                  let url = URL(string: config.apiUrl) else { completion(nil); return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if !config.apiKey.isEmpty {
+                req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+            }
+            req.httpBody = bodyData
+            session.dataTask(with: req) { data, _, _ in
+                guard let data = data else { completion(nil); return }
+                completion(parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
         case .offline:
             completion(nil)
         }
+    }
+
+    /// 自定义 API 响应解析：OpenAI 兼容 choices[0].message.content / translatedText / translation / data.translations / 纯文本
+    private func parseCustom(_ data: Data) -> String? {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let choices = obj["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let msg = first["message"] as? [String: Any],
+               let c = msg["content"] as? String { return c }
+            if let t = obj["translatedText"] as? String { return t }
+            if let t = obj["translation"] as? String { return t }
+            if let t = obj["data"] as? [String: Any],
+               let s = t["translations"] as? [[String: Any]],
+               let x = s.first?["translatedText"] as? String { return x }
+            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String { print("API error:", m) }
+            return nil
+        }
+        return String(data: data, encoding: .utf8)   // 纯文本响应兜底
     }
 
     private func percentEncode(_ s: String) -> String {

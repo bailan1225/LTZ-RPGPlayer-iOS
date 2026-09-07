@@ -43,6 +43,8 @@ enum TranslatorConfig {
             "apiUrl": defaults.string(forKey: "tr_api_url") ?? "",
             "apiKey": defaults.string(forKey: "tr_api_key") ?? "",
             "prompt": defaults.string(forKey: "tr_prompt") ?? "",
+            "model": defaults.string(forKey: "tr_model") ?? "",
+            "memEmail": defaults.string(forKey: "tr_mem_email") ?? "",
             "cacheVersion": defaults.integer(forKey: "tr_cache_version"),
             "translateUI": false,
             "dictionary": dict

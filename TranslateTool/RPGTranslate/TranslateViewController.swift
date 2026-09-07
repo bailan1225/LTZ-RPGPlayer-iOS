@@ -66,6 +66,8 @@ final class TranslateViewController: UITableViewController {
         c.apiUrl = defaults.string(forKey: "tr_api_url") ?? ""
         c.apiKey = defaults.string(forKey: "tr_api_key") ?? ""
         c.prompt = defaults.string(forKey: "tr_prompt") ?? ""
+        c.model = defaults.string(forKey: "tr_model") ?? ""
+        c.memEmail = defaults.string(forKey: "tr_mem_email") ?? ""
         return c
     }
 
