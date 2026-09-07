@@ -533,9 +533,6 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         hideLoading()
     }
 
