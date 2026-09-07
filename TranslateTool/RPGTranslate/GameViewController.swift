@@ -2,10 +2,7 @@ import UIKit
 import WebKit
 import Network
 
-/// 轻量本地 HTTP 服务器：WKWebView 以 http://127.0.0.1:<port> 加载游戏，
-/// 彻底规避 file:// 下 XHR 相对资源加载失败（Failed to load: data/xxx.json）与 CORS 限制，
-/// 同时保证 localStorage/IndexedDB（游戏存档）正常工作。仅监听 loopback，无网络权限要求。
-final class LocalHTTPServer {
+/// 杞婚噺鏈湴 HTTP 鏈嶅姟鍣細WKWebView 浠?http://127.0.0.1:<port> 鍔犺浇娓告垙锛?/// 褰诲簳瑙勯伩 file:// 涓?XHR 鐩稿璧勬簮鍔犺浇澶辫触锛團ailed to load: data/xxx.json锛変笌 CORS 闄愬埗锛?/// 鍚屾椂淇濊瘉 localStorage/IndexedDB锛堟父鎴忓瓨妗ｏ級姝ｅ父宸ヤ綔銆備粎鐩戝惉 loopback锛屾棤缃戠粶鏉冮檺瑕佹眰銆?final class LocalHTTPServer {
     private var listener: NWListener?
     private let root: URL
     private let queue: DispatchQueue
@@ -15,8 +12,7 @@ final class LocalHTTPServer {
         self.queue = DispatchQueue(label: "localhttp", qos: .userInitiated)
     }
 
-    /// 启动监听随机端口，返回 baseURL（http://127.0.0.1:<port>/）
-    func start() -> URL? {
+    /// 鍚姩鐩戝惉闅忔満绔彛锛岃繑鍥?baseURL锛坔ttp://127.0.0.1:<port>/锛?    func start() -> URL? {
         if listener != nil { return baseURL() }
         do {
             let params = NWParameters.tcp
@@ -52,7 +48,7 @@ final class LocalHTTPServer {
             guard let self = self else { conn.cancel(); return }
             var acc = data
             if let chunk = chunk { acc.append(chunk) }
-            // 请求头以 \r\n\r\n 结束
+            // 璇锋眰澶翠互 \r\n\r\n 缁撴潫
             if let range = acc.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(data: acc[..<range.lowerBound], encoding: .utf8) ?? ""
                 self.respond(conn, head: head)
@@ -70,9 +66,8 @@ final class LocalHTTPServer {
         }
     }
 
-    private func respond(conn: NWConnection, head: String) {
-        defer { conn.cancel() }   // 单请求后关闭，简单可靠
-        let lines = head.components(separatedBy: "\r\n")
+    private func respond(_ conn: NWConnection, head: String) {
+        defer { conn.cancel() }   // 鍗曡姹傚悗鍏抽棴锛岀畝鍗曞彲闈?        let lines = head.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else { return }
         let parts = requestLine.split(separator: " ").map(String.init)
         guard parts.count >= 2, parts[0] == "GET" else { return }
@@ -81,8 +76,7 @@ final class LocalHTTPServer {
         let decoded = path.removingPercentEncoding ?? path
         let rel = decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
-        // 目录穿越防护：只允许 root 范围内
-        let rootPath = root.path
+        // 鐩綍绌胯秺闃叉姢锛氬彧鍏佽 root 鑼冨洿鍐?        let rootPath = root.path
         guard fileURL.path == rootPath || fileURL.path.hasPrefix(rootPath + "/") else { return }
 
         var isDir: ObjCBool = false
@@ -90,7 +84,7 @@ final class LocalHTTPServer {
             send(conn, status: 404, mime: "text/plain", body: Data("404 Not Found".utf8))
             return
         }
-        if isDir {
+        if isDir.boolValue {
             let idx = fileURL.appendingPathComponent("index.html")
             guard FileManager.default.fileExists(atPath: idx.path),
                   let body = try? Data(contentsOf: idx) else {
@@ -107,7 +101,7 @@ final class LocalHTTPServer {
         send(conn, status: 200, mime: mimeType(fileURL.pathExtension), body: body)
     }
 
-    private func send(conn: NWConnection, status: Int, mime: String, body: Data) {
+    private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
         let reason = status == 200 ? "OK" : (status == 404 ? "Not Found" : "Error")
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: \(mime)\r\n"
@@ -148,7 +142,7 @@ final class LocalHTTPServer {
     }
 }
 
-/// 游戏运行页：WKWebView 加载游戏 index.html，并注入翻译脚本
+/// 娓告垙杩愯椤碉細WKWebView 鍔犺浇娓告垙 index.html锛屽苟娉ㄥ叆缈昏瘧鑴氭湰
 final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate {
 
     private let gameDir: URL
@@ -173,7 +167,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         loadGame()
     }
 
-    // MARK: - 屏幕方向：游戏运行页强制横屏
+    // MARK: - 灞忓箷鏂瑰悜锛氭父鎴忚繍琛岄〉寮哄埗妯睆
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
     override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeLeft }
@@ -204,16 +198,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         let config = WKWebViewConfiguration()
         let contentController = WKUserContentController()
 
-        // 1) 注入翻译配置（在游戏脚本之前）
-        contentController.addUserScript(WKUserScript(
+        // 1) 娉ㄥ叆缈昏瘧閰嶇疆锛堝湪娓告垙鑴氭湰涔嬪墠锛?        contentController.addUserScript(WKUserScript(
             source: TranslatorConfig.injectionSource(),
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // 2) 注入翻译补丁脚本
+        // 2) 娉ㄥ叆缈昏瘧琛ヤ竵鑴氭湰
         contentController.addUserScript(WKUserScript(
             source: TranslatorJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // 3) 注入作弊器脚本
-        contentController.addUserScript(WKUserScript(
+        // 3) 娉ㄥ叆浣滃紛鍣ㄨ剼鏈?        contentController.addUserScript(WKUserScript(
             source: CheatJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
         contentController.add(self, name: "rpgTr")
@@ -225,15 +217,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
-        // iOS 17 触摸/键盘细节：点击更跟手、拖拽收起键盘
-        webView.scrollView.bounces = false
+        // iOS 17 瑙︽懜/閿洏缁嗚妭锛氱偣鍑绘洿璺熸墜銆佹嫋鎷芥敹璧烽敭鐩?        webView.scrollView.bounces = false
         webView.scrollView.delaysContentTouches = false
         webView.scrollView.canCancelContentTouches = true
         webView.scrollView.keyboardDismissMode = .interactive
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
-        // 全屏沉浸：用 view 边缘而非 safeArea，横屏时画面更大（不缩进刘海凹口）
-        NSLayoutConstraint.activate([
+        // 鍏ㄥ睆娌夋蹈锛氱敤 view 杈圭紭鑰岄潪 safeArea锛屾í灞忔椂鐢婚潰鏇村ぇ锛堜笉缂╄繘鍒樻捣鍑瑰彛锛?        NSLayoutConstraint.activate([
             webView.topAnchor.constraint(equalTo: view.topAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -247,17 +237,17 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             image: UIImage(systemName: "externaldrive"),
             style: .plain, target: self, action: #selector(manageSaves))
         save.tintColor = .systemTeal
-        save.accessibilityLabel = "存档管理"
+        save.accessibilityLabel = "瀛樻。绠＄悊"
         let toggle = UIBarButtonItem(
             image: UIImage(systemName: "character.bubble"),
             style: .plain, target: self, action: #selector(toggleTranslate))
         toggle.tintColor = defaults.bool(forKey: "tr_enabled") ? .systemBlue : .secondaryLabel
-        toggle.accessibilityLabel = "翻译开关"
+        toggle.accessibilityLabel = "缈昏瘧寮€鍏?
         let cheat = UIBarButtonItem(
             image: UIImage(systemName: "gift"),
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
-        cheat.accessibilityLabel = "作弊器"
+        cheat.accessibilityLabel = "浣滃紛鍣?
         toolbarItems = [reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
     }
@@ -266,8 +256,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         webView.evaluateJavaScript("window.RPGCheat && window.RPGCheat.toggle();") { _, _ in }
     }
 
-    // MARK: - 存档管理（mtool 风格：备份/恢复 localStorage）
-
+    // MARK: - 瀛樻。绠＄悊锛坢tool 椋庢牸锛氬浠?鎭㈠ localStorage锛?
     private static var docs: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -283,10 +272,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func manageSaves() {
-        let a = UIAlertController(title: "存档管理（\(gameDisplayName)）", message: nil, preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "备份当前存档", style: .default) { [weak self] _ in self?.backupSaves() })
-        a.addAction(UIAlertAction(title: "恢复存档", style: .default) { [weak self] _ in self?.listSaves() })
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        let a = UIAlertController(title: "瀛樻。绠＄悊锛圽(gameDisplayName)锛?, message: nil, preferredStyle: .actionSheet)
+        a.addAction(UIAlertAction(title: "澶囦唤褰撳墠瀛樻。", style: .default) { [weak self] _ in self?.backupSaves() })
+        a.addAction(UIAlertAction(title: "鎭㈠瀛樻。", style: .default) { [weak self] _ in self?.listSaves() })
+        a.addAction(UIAlertAction(title: "鍙栨秷", style: .cancel))
         if let pop = a.popoverPresentationController {
             pop.sourceView = view
             pop.sourceRect = view.bounds
@@ -296,7 +285,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     private func backupSaves() {
         guard pageLoaded else {
-            toast("游戏还没加载完，稍后再备份")
+            toast("娓告垙杩樻病鍔犺浇瀹岋紝绋嶅悗鍐嶅浠?)
             return
         }
         let js = "(function(){var o={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);o[k]=localStorage.getItem(k);}return JSON.stringify(o);})()"
@@ -307,12 +296,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
                 let url = Self.savesDir.appendingPathComponent(name)
                 do {
                     try json.write(to: url, atomically: true, encoding: .utf8)
-                    self.toast("存档已备份：\(name)")
+                    self.toast("瀛樻。宸插浠斤細\(name)")
                 } catch {
-                    self.toast("备份写入失败")
+                    self.toast("澶囦唤鍐欏叆澶辫触")
                 }
             } else {
-                self.toast("没有可备份的存档（\(error?.localizedDescription ?? "空")）")
+                self.toast("娌℃湁鍙浠界殑瀛樻。锛圽(error?.localizedDescription ?? "绌?)锛?)
             }
         }
     }
@@ -323,16 +312,16 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             .filter { $0.pathExtension == "json" }
             .sorted { $0.lastPathComponent > $1.lastPathComponent }
         guard !files.isEmpty else {
-            toast("还没有存档备份")
+            toast("杩樻病鏈夊瓨妗ｅ浠?)
             return
         }
-        let a = UIAlertController(title: "恢复存档", message: "选择要恢复的备份（会覆盖当前游戏存档）", preferredStyle: .actionSheet)
+        let a = UIAlertController(title: "鎭㈠瀛樻。", message: "閫夋嫨瑕佹仮澶嶇殑澶囦唤锛堜細瑕嗙洊褰撳墠娓告垙瀛樻。锛?, preferredStyle: .actionSheet)
         for f in files {
             a.addAction(UIAlertAction(title: f.lastPathComponent, style: .default) { [weak self] _ in
                 self?.restoreSaves(from: f)
             })
         }
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        a.addAction(UIAlertAction(title: "鍙栨秷", style: .cancel))
         if let pop = a.popoverPresentationController {
             pop.sourceView = view
             pop.sourceRect = view.bounds
@@ -344,10 +333,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         guard let data = try? Data(contentsOf: file),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
               !obj.isEmpty else {
-            toast("备份文件无效")
+            toast("澶囦唤鏂囦欢鏃犳晥")
             return
         }
-        // 序列化注入语句：先清空再写入
+        // 搴忓垪鍖栨敞鍏ヨ鍙ワ細鍏堟竻绌哄啀鍐欏叆
         var js = "localStorage.clear();"
         for (k, v) in obj {
             let kk = (k as NSString).replacingOccurrences(of: "\\", with: "\\\\")
@@ -358,7 +347,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         }
         js += "location.reload();"
         webView.evaluateJavaScript(js) { [weak self] _, error in
-            self?.toast(error == nil ? "存档已恢复，正在重载…" : "恢复失败：\(error?.localizedDescription ?? "")")
+            self?.toast(error == nil ? "瀛樻。宸叉仮澶嶏紝姝ｅ湪閲嶈浇鈥? : "鎭㈠澶辫触锛歕(error?.localizedDescription ?? "")")
         }
     }
 
@@ -371,7 +360,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private func toast(_ msg: String) {
         DispatchQueue.main.async {
             let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "好", style: .default))
+            alert.addAction(UIAlertAction(title: "濂?, style: .default))
             self.present(alert, animated: true)
         }
     }
@@ -392,30 +381,26 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func loadGame() {
-        // 目录名含 [ ] 空格等特殊字符时 file:// 相对资源加载失败，先自动重命名为安全名
-        let safeDir = SafePath.sanitize(gameDir)
+        // 鐩綍鍚嶅惈 [ ] 绌烘牸绛夌壒娈婂瓧绗︽椂 file:// 鐩稿璧勬簮鍔犺浇澶辫触锛屽厛鑷姩閲嶅懡鍚嶄负瀹夊叏鍚?        let safeDir = SafePath.sanitize(gameDir)
         guard let target = GameDetector.resolveLoadTarget(for: safeDir) else {
-            let alert = UIAlertController(title: "无法识别游戏目录",
-                                          message: "\(safeDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
+            let alert = UIAlertController(title: "鏃犳硶璇嗗埆娓告垙鐩綍",
+                                          message: "\(safeDir.lastPathComponent) 閲屾病鏈夋壘鍒?index.html 鎴?www/js 鏍稿績鏂囦欢銆?,
                                           preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "好", style: .default))
+            alert.addAction(UIAlertAction(title: "濂?, style: .default))
             present(alert, animated: true)
             return
         }
-        // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
-        GameDetector.fixPluginAliases(in: target.readRoot)
-        // 本地 HTTP 服务器加载：规避 file:// 下 XHR 加载 data/*.json 失败（iOS 17）
-        httpServer?.stop()
+        // 澶氳瑷€鎻掍欢鍚嶄慨澶嶏紙鏃ユ枃/涓枃/璇█鍚庣紑 js锛夛細plugins.js 寮曠敤鍚嶄笌鏂囦欢涓嶅尮閰嶆椂寤哄埆鍚?        GameDetector.fixPluginAliases(in: target.readRoot)
+        // 鏈湴 HTTP 鏈嶅姟鍣ㄥ姞杞斤細瑙勯伩 file:// 涓?XHR 鍔犺浇 data/*.json 澶辫触锛坕OS 17锛?        httpServer?.stop()
         let server = LocalHTTPServer(root: target.readRoot)
         guard let base = server.start() else {
-            // 服务器启动失败兜底：回退 file:// 直接加载
+            // 鏈嶅姟鍣ㄥ惎鍔ㄥけ璐ュ厹搴曪細鍥為€€ file:// 鐩存帴鍔犺浇
             let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
             webView.loadFileURL(target.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
             return
         }
         httpServer = server
-        // index.html 相对 root 的路径
-        let rootPath = target.readRoot.standardizedFileURL.path
+        // index.html 鐩稿 root 鐨勮矾寰?        let rootPath = target.readRoot.standardizedFileURL.path
         var rel = target.index.standardizedFileURL.path
         if rel.hasPrefix(rootPath) {
             rel = String(rel.dropFirst(rootPath.count))
