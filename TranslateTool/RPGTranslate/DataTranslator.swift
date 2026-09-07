@@ -36,6 +36,7 @@ struct TranslateSummary {
     var translatedUnique = 0
     var failedUnique = 0
     var mapping: [String: String] = [:]
+    var lastError = """
 }
 
 /// 进度回调
@@ -522,6 +523,7 @@ final class DataTranslator {
             }
         }
         saveMapping(mapping, for: game)
+        summary.lastError = engine.lastError
         completion(summary)
     }
 

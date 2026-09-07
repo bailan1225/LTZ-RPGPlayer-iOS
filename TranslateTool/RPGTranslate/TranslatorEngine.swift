@@ -6,6 +6,7 @@ enum TranslationEngine: Int {
     case mymemory = 1
     case custom = 2
     case agnes = 3
+    case aqua = 4
 }
 
 struct TranslationConfig {
@@ -30,6 +31,9 @@ final class TranslatorEngine {
     private let cacheURL: URL
     private let session: URLSession
     private let maxTextLength = 450   // MyMemory 单条上限约 500 字符，留余量
+
+    /// 最近一次 API 错误的中文描述（AQUA/Agnes/OpenAI 兼容 error.message），供界面诊断
+    private(set) var lastError = ""
 
     init(config: TranslationConfig) {
         self.config = config
@@ -199,9 +203,42 @@ final class TranslatorEngine {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             req.httpBody = bodyData
-            session.dataTask(with: req) { [weak self] data, _, _ in
-                guard let data = data else { completion(nil); return }
+            session.dataTask(with: req) { [weak self] data, _, err in
+                guard let data = data else {
+                    self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    completion(nil)
+                    return
+                }
                 completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
+        case .aqua:
+            // AQUA 网关（acu.ltzy.top）：OpenAI 兼容，免费模型直用，默认 glm-4-flash
+            let aquaURL = "https://api.ltzy.top/v1/chat/completions"
+            let aquaModel = config.model.isEmpty ? "glm-4-flash" : config.model
+            var body: [String: Any] = [
+                "model": aquaModel,
+                "messages": [
+                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                    ["role": "user", "content": String(text.prefix(maxTextLength))]
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4096
+            ]
+            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+                  let url = URL(string: aquaURL) else { completion(nil); return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer (config.apiKey)", forHTTPHeaderField: "Authorization")
+            req.httpBody = bodyData
+            session.dataTask(with: req) { [weak self] data, _, err in
+                guard let data = data else {
+                    self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    completion(nil)
+                    return
+                }
+                guard let r = self?.parseCustom(data) else { completion(nil); return }
+                completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
             completion(nil)
@@ -220,7 +257,10 @@ final class TranslatorEngine {
             if let t = obj["data"] as? [String: Any],
                let s = t["translations"] as? [[String: Any]],
                let x = s.first?["translatedText"] as? String { return x }
-            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String { print("API error:", m) }
+            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String {
+                lastError = m
+                print("API error:", m)
+            }
             return nil
         }
         return String(data: data, encoding: .utf8)   // 纯文本响应兜底
