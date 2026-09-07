@@ -160,7 +160,7 @@ final class TranslateViewController: UITableViewController {
         switch section {
         case 0: return 2
         case 1: return 3
-        case 2: return isRunning ? 2 : 5
+        case 2: return isRunning ? 2 : 6
         default: return 0
         }
     }
@@ -213,14 +213,18 @@ final class TranslateViewController: UITableViewController {
                 phaseLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12)
             ])
         case (2, 2):
+            cell.textLabel?.text = "校对译文（手动精修）"
+            cell.textLabel?.textColor = .systemIndigo
+            cell.selectionStyle = .default
+        case (2, 3):
             cell.textLabel?.text = "应用翻译文件（mtool/JSON）"
             cell.textLabel?.textColor = .systemBlue
             cell.selectionStyle = .default
-        case (2, 3):
+        case (2, 4):
             cell.textLabel?.text = "导出到文件App"
             cell.textLabel?.textColor = .systemGreen
             cell.selectionStyle = .default
-        case (2, 4):
+        case (2, 5):
             cell.textLabel?.text = "恢复原版 data"
             cell.textLabel?.textColor = .systemOrange
             cell.selectionStyle = .default
@@ -237,10 +241,15 @@ final class TranslateViewController: UITableViewController {
         case 0:
             isRunning ? stopTranslate() : startTranslate()
         case 2:
-            applyTranslationFile()
+            let vc = ReviewViewController(game: game)
+            let nav = UINavigationController(rootViewController: vc)
+            nav.modalPresentationStyle = .fullScreen
+            present(nav, animated: true)
         case 3:
-            exportGame()
+            applyTranslationFile()
         case 4:
+            exportGame()
+        case 5:
             restore()
         default:
             break

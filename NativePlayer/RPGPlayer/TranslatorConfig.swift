@@ -9,7 +9,8 @@ enum TranslatorConfig {
         let idx = defaults.integer(forKey: "tr_engine")
         let engine = engines.indices.contains(idx) ? engines[idx] : "mymemory"
 
-        // 词典：优先用户 Documents/dict.json，其次内置样例
+        // 词典优先级：translations/*.json（mtool 格式外部翻译文件，覆盖）→
+        //           Documents/dict.json（自定义）→ 内置样例 dict
         var dict: [String: String] = [:]
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -20,6 +21,18 @@ enum TranslatorConfig {
         if let data = try? Data(contentsOf: dictURL),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
             dict = json
+        }
+        // 外部翻译文件：文件App → 我的 iPhone → RPG Player → translations 下的所有 JSON
+        // （mtool/他人分享的 {原文: 译文} 格式），运行时直接命中，离线、术语一致
+        let trDir = docs.appendingPathComponent("translations", isDirectory: true)
+        if let files = try? fm.contentsOfDirectory(at: trDir, includingPropertiesForKeys: nil) {
+            for f in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+            where f.pathExtension.lowercased() == "json" {
+                if let data = try? Data(contentsOf: f),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                    for (k, v) in json { dict[k] = v }
+                }
+            }
         }
 
         let payload: [String: Any] = [

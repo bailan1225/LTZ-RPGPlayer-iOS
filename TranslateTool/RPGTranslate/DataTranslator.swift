@@ -317,6 +317,31 @@ final class DataTranslator {
         return (filesChanged, refsChanged)
     }
 
+    // MARK: - 校对 / 映射持久化
+
+    /// 保存翻译结果映射到 translations/<游戏名>.json（mtool 兼容格式，供校对/复用/外部工具）
+    static func saveMapping(_ mapping: [String: String], for game: GameInfo) {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("translations", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(game.root.lastPathComponent + ".json")
+        if let data = try? JSONSerialization.data(withJSONObject: mapping, options: [.prettyPrinted]) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// 读取已保存的翻译映射（校对 / override 词典用）
+    static func savedMapping(for game: GameInfo) -> [String: String] {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("translations")
+            .appendingPathComponent(game.root.lastPathComponent + ".json")
+        guard let d = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+        return obj
+    }
+
     private static func stringAt(_ node: Any, _ path: [PathComp]) -> String? {
         var cur: Any = node
         for comp in path {
@@ -460,6 +485,7 @@ final class DataTranslator {
         }
         group.wait()
         engine.saveCache()
+        saveMapping(mapping, for: game)
 
         if cancelled() { completion(TranslateSummary()); return }
 
@@ -478,6 +504,7 @@ final class DataTranslator {
                 progress(TranslateProgress(phase: "写回文件…", done: i + 1, total: scanned.count))
             }
         }
+        saveMapping(mapping, for: game)
         completion(summary)
     }
 

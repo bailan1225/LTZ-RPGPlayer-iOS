@@ -10,11 +10,26 @@ final class GamesViewController: UITableViewController {
         title = "RPG Player"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add, target: self, action: #selector(importGame))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: "日志", style: .plain, target: self, action: #selector(showLog))
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         refreshGames()
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshGames),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    /// 崩溃日志查看（crash.log 由 CrashReporter 写入），支持一键分享排查
+    @objc private func showLog() {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("crash.log")
+        let text = (try? String(contentsOf: url, encoding: .utf8)) ?? "（还没有崩溃日志）"
+        let ac = UIActivityViewController(activityItems: ["RPG Player 崩溃日志：\n" + text], applicationActivities: nil)
+        if let pop = ac.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(ac, animated: true)
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }

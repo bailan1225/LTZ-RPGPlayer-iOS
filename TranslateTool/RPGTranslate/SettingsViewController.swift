@@ -63,7 +63,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 0: return 1
         case 1: return 2
         case 2: return 2
-        case 3: return 1
+        case 3: return 2
         default: return 0
         }
     }
@@ -119,6 +119,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = "清除翻译缓存"
             cell.textLabel?.textColor = .systemRed
             cell.accessoryType = .none
+        case (3, 1):
+            cell.textLabel?.text = "崩溃日志"
+            cell.textLabel?.textColor = .systemBlue
+            cell.accessoryType = .none
         default:
             break
         }
@@ -128,12 +132,26 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard indexPath.section == 3 else { return }
-        let fm = FileManager.default
-        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let cacheDir = docs.appendingPathComponent("transCache", isDirectory: true)
-        try? fm.removeItem(at: cacheDir)
-        let alert = UIAlertController(title: "已清除", message: "翻译缓存已删除，下次翻译会重新请求在线引擎。", preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "好", style: .default))
-        present(alert, animated: true)
+        if indexPath.row == 0 {
+            let fm = FileManager.default
+            let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let cacheDir = docs.appendingPathComponent("transCache", isDirectory: true)
+            try? fm.removeItem(at: cacheDir)
+            let alert = UIAlertController(title: "已清除", message: "翻译缓存已删除，下次翻译会重新请求在线引擎。", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+        } else {
+            let fm = FileManager.default
+            let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let url = docs.appendingPathComponent("crash.log")
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? "（还没有崩溃日志）"
+            let ac = UIActivityViewController(
+                activityItems: ["RPG 翻译器崩溃日志：\n" + text], applicationActivities: nil)
+            if let pop = ac.popoverPresentationController {
+                pop.sourceView = view
+                pop.sourceRect = view.bounds
+            }
+            present(ac, animated: true)
+        }
     }
 }

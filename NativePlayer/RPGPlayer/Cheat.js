@@ -9,6 +9,8 @@
     visible: false,
     noEncounter: false,
     invincible: false,
+    through: false,
+    oneHit: false,
     enemyDamageMult: 1,
     speed: 1
   };
@@ -88,6 +90,44 @@
     toast(cheat.invincible ? "无敌：开" : "无敌：关");
   }
 
+  function toggleThrough() {
+    cheat.through = !cheat.through;
+    applyMovementPatches();
+    toast(cheat.through ? "穿墙：开" : "穿墙：关");
+  }
+
+  function toggleOneHit() {
+    cheat.oneHit = !cheat.oneHit;
+    toast(cheat.oneHit ? "一击必杀：开" : "一击必杀：关");
+  }
+
+  function cheatWin() {
+    if (!ready() || !window.SceneManager) { toast("未进入游戏"); return; }
+    try {
+      var s = SceneManager._scene;
+      var name = (s && s.constructor && s.constructor.name) || "";
+      if (name.indexOf("Battle") < 0) { toast("不在战斗中"); return; }
+      $gameTroop.members().forEach(function (e) {
+        if (e && typeof e.die === "function" && e.isAlive()) e.die();
+      });
+      $gameParty.members().forEach(function (a) {
+        if (a && typeof a.clearActions === "function") a.clearActions();
+      });
+      toast("战斗已直接胜利");
+    } catch (err) { toast("出错: " + err.message); }
+  }
+
+  function cheatEscape() {
+    if (!ready() || !window.SceneManager) { toast("未进入游戏"); return; }
+    try {
+      var s = SceneManager._scene;
+      var name = (s && s.constructor && s.constructor.name) || "";
+      if (name.indexOf("Battle") < 0) { toast("不在战斗中"); return; }
+      s.processEscape();
+      toast("已逃离战斗");
+    } catch (err) { toast("出错: " + err.message); }
+  }
+
   function cycleEnemyDamage() {
     var opts = [1, 10, 100];
     var idx = opts.indexOf(cheat.enemyDamageMult);
@@ -132,6 +172,7 @@
     if (typeof origGainHp === "function") {
       Game_Battler.prototype.gainHp = function (value) {
         if (cheat.invincible && this.isActor() && value < 0) value = 0;
+        if (cheat.oneHit && this.isEnemy() && value < 0) value = -99999999;
         if (this.isEnemy() && value < 0 && cheat.enemyDamageMult !== 1) {
           value = Math.floor(value * cheat.enemyDamageMult);
         }
@@ -139,6 +180,20 @@
       };
     }
     window.__rpgCheatBattlePatched = true;
+  }
+
+  // 穿墙：绕过角色/事件碰撞判定
+  function applyMovementPatches() {
+    if (!window.Game_CharacterBase) return;
+    if (window.__rpgCheatMovePatched) return;
+    var origCollide = Game_CharacterBase.prototype.isCollidedWithCharacters;
+    if (typeof origCollide === "function") {
+      Game_CharacterBase.prototype.isCollidedWithCharacters = function (x, y) {
+        if (cheat.through) return false;
+        return origCollide.call(this, x, y);
+      };
+    }
+    window.__rpgCheatMovePatched = true;
   }
 
   // 速度补丁：仅在开启加速时包装 requestAnimationFrame，速度回到 1x 立即恢复原样，
@@ -191,6 +246,10 @@
       ["全道具/装备", cheatAllItems],
       ["不遇敌 切换", toggleNoEncounter],
       ["无敌 切换", toggleInvincible],
+      ["穿墙 切换", toggleThrough],
+      ["一击必杀 切换", toggleOneHit],
+      ["战斗直接胜利", cheatWin],
+      ["战斗直接逃跑", cheatEscape],
       ["对敌伤害 x", cycleEnemyDamage],
       ["游戏速度 x", cycleSpeed]
     ];
@@ -244,6 +303,7 @@
     }
     applyEncounterPatch();
     applyBattlePatches();
+    applyMovementPatches();
     if (!window.__rpgCheatInit) {
       window.__rpgCheatInit = true;
       setTimeout(poll, 500);
@@ -257,6 +317,7 @@
     isVisible: function () { return cheat.visible; },
     getState: function () {
       return { noEncounter: cheat.noEncounter, invincible: cheat.invincible,
+               through: cheat.through, oneHit: cheat.oneHit,
                enemyDamageMult: cheat.enemyDamageMult, speed: cheat.speed };
     }
   };
