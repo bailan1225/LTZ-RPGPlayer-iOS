@@ -9,6 +9,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     private var targetField: UITextField!
     private var urlField: UITextField!
     private var keyField: UITextField!
+    private var enabledSwitch: UISwitch!
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -18,6 +19,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API"])
         engineControl.selectedSegmentIndex = defaults.integer(forKey: "tr_engine")
         engineControl.addTarget(self, action: #selector(engineChanged), for: .valueChanged)
+
+        enabledSwitch = UISwitch()
+        enabledSwitch.isOn = defaults.bool(forKey: "tr_enabled")
+        enabledSwitch.addTarget(self, action: #selector(enabledChanged), for: .valueChanged)
 
         sourceField = makeField(placeholder: "如 ja / en", text: defaults.string(forKey: "tr_source") ?? "ja", secure: false)
         targetField = makeField(placeholder: "如 zh-CN", text: defaults.string(forKey: "tr_target") ?? "zh-CN", secure: false)
@@ -42,6 +47,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         defaults.set(engineControl.selectedSegmentIndex, forKey: "tr_engine")
     }
 
+    @objc private func enabledChanged() {
+        defaults.set(enabledSwitch.isOn, forKey: "tr_enabled")
+    }
+
     @objc private func fieldChanged() {
         defaults.set(sourceField.text ?? "", forKey: "tr_source")
         defaults.set(targetField.text ?? "", forKey: "tr_target")
@@ -60,7 +69,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
-        case 0: return 1
+        case 0: return 2
         case 1: return 2
         case 2: return 2
         case 3: return 2
@@ -99,6 +108,9 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
                 engineControl.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 8),
                 engineControl.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
             ])
+        case (0, 1):
+            cell.textLabel?.text = "运行时翻译（播放游戏时）"
+            cell.accessoryView = enabledSwitch
         case (1, 0):
             cell.textLabel?.text = "源语言"
             cell.accessoryView = sourceField

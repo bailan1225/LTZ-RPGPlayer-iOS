@@ -24,4 +24,17 @@ enum CrashReporter {
         let msg = "[SIGNAL \(sig) \(Date())] app crashed\n"
         try? msg.write(to: logURL, atomically: true, encoding: .utf8)
     }
+
+    /// 追加业务日志（JS 加载失败、游戏错误等，用于排障）
+    static func log(_ text: String) {
+        guard let handle = try? FileHandle(forWritingTo: logURL) else {
+            try? text.write(to: logURL, atomically: true, encoding: .utf8)
+            return
+        }
+        defer { try? handle.close() }
+        handle.seekToEndOfFile()
+        if let d = ("[\(Date())] " + text + "\n").data(using: .utf8) {
+            handle.write(d)
+        }
+    }
 }

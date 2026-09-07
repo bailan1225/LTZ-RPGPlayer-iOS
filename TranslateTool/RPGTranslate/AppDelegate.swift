@@ -13,7 +13,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             "tr_source": "ja",
             "tr_target": "zh-CN",
             "tr_api_url": "",
-            "tr_api_key": ""
+            "tr_api_key": "",
+            "tr_enabled": true,
+            "tr_cache_version": 0
         ])
 
         let window = UIWindow(frame: UIScreen.main.bounds)

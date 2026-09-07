@@ -10,11 +10,17 @@ final class GameListViewController: UITableViewController {
         title = "RPG 翻译器"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add, target: self, action: #selector(importGame))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: "翻译文件", style: .plain, target: self, action: #selector(openTranslationFiles))
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         refresh()
         NotificationCenter.default.addObserver(
             self, selector: #selector(refresh),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    @objc private func openTranslationFiles() {
+        navigationController?.pushViewController(TranslationFilesViewController(), animated: true)
     }
 
     private static var documents: URL {
@@ -72,8 +78,26 @@ final class GameListViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         guard !games.isEmpty else { return }
-        let vc = TranslateViewController(game: games[indexPath.row])
-        navigationController?.pushViewController(vc, animated: true)
+        let info = games[indexPath.row]
+        let a = UIAlertController(
+            title: displayName(for: info),
+            message: info.root.lastPathComponent,
+            preferredStyle: .actionSheet)
+        a.addAction(UIAlertAction(title: "▶ 播放游戏（带翻译+作弊器）", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            let vc = GameViewController(gameDir: info.root)
+            self.navigationController?.pushViewController(vc, animated: true)
+        })
+        a.addAction(UIAlertAction(title: "翻译 / 校对 / 导出", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            self.navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
+        })
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = a.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = tableView.rectForRow(at: indexPath)
+        }
+        present(a, animated: true)
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
