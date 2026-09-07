@@ -8,16 +8,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         CrashReporter.install()
-        // 首次启动默认值（register 不会覆盖用户已保存的设置）
+        // 首次启动默认值（register 不会覆盖用户已保存的设置）；纯词典模式仅需翻译开关
         UserDefaults.standard.register(defaults: [
-            "tr_enabled": true,
-            "tr_engine": 1,
-            "tr_source": "ja",
-            "tr_target": "zh-CN",
-            "tr_api_url": "",
-            "tr_api_key": "",
-            "tr_cache_version": 1,
-            "tr_prompt": ""
+            "tr_enabled": true
         ])
 
         let window = UIWindow(frame: UIScreen.main.bounds)

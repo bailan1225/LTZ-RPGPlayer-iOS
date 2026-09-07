@@ -1,6 +1,7 @@
-// RPG Player 内置翻译注入脚本（RPG Maker MV / MZ 通用）
-// 挂钩 Window_Base.drawTextEx：命中缓存/离线词典时同步替换文本；
-// 未命中时异步翻译，完成后延后一帧刷新所在窗口。所有路径均不向游戏抛出异常。
+// RPG Player 内置翻译注入脚本（纯词典模式）
+// 只做离线命中：TranslatorConfig 已把 translations/*.json + dict.json 合并注入到 window.RPG_T.dictionary。
+// 无网络请求、无异步、无 localStorage 读写——错误面最小，MV/MZ 通用。
+// 挂钩 Window_Base.drawTextEx（+ 可选 Bitmap.drawText），命中词典即同步替换文本，保留全部控制码。
 (function () {
   "use strict";
   if (window.__rpgTrInjected) return;
@@ -9,33 +10,11 @@
   var cfg = window.RPG_T || {};
   var state = {
     enabled: !!cfg.enabled,
-    engine: cfg.engine || "offline",
-    source: cfg.source || "ja",
-    target: cfg.target || "zh-CN",
-    apiUrl: cfg.apiUrl || "",
-    apiKey: cfg.apiKey || "",
-    prompt: cfg.prompt || "",
-    cacheVersion: cfg.cacheVersion || 1,
     translateUI: !!cfg.translateUI,
     dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {}
   };
-  var cacheKey = "rpgTrCache_v" + state.cacheVersion + "_" + state.target;
-  var cache = {};
-  var sessionPending = {};
-
-  function loadCache() {
-    try {
-      var raw = localStorage.getItem(cacheKey);
-      if (raw) cache = JSON.parse(raw) || {};
-    } catch (e) { cache = {}; }
-  }
-  function saveCache() {
-    try { localStorage.setItem(cacheKey, JSON.stringify(cache)); } catch (e) {}
-  }
-  loadCache();
 
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
-  function keyOf(s) { return state.target + "|" + s; }
 
   // 原型安全的词典读取：避免 "__proto__/constructor" 等键命中继承属性
   function dictGet(s) {
@@ -75,72 +54,17 @@
     }).join("");
   }
 
-  function xhrGet(url, done) {
-    var xhr = new XMLHttpRequest();
-    try {
-      xhr.open("GET", url, true);
-      xhr.timeout = 10000;
-      xhr.onload = function () {
-        if (xhr.status >= 200 && xhr.status < 300) done(null, xhr.responseText);
-        else done(new Error("HTTP " + xhr.status));
-      };
-      xhr.onerror = function () { done(new Error("network")); };
-      xhr.ontimeout = function () { done(new Error("timeout")); };
-      xhr.send();
-    } catch (e) { done(e); }
-  }
-
-  function translatePlain(plain, done) {
-    var trimmed = norm(plain);
-    if (!trimmed) { done(null); return; }
-    var d1 = dictGet(trimmed);
-    var d2 = dictGet(plain);
-    if (typeof d1 === "string") { done(d1); return; }
-    if (typeof d2 === "string") { done(d2); return; }
-    if (!state.enabled) { done(null); return; }
-
-    if (state.engine === "mymemory") {
-      var url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(trimmed) +
-        "&langpair=" + encodeURIComponent(state.source + "|" + state.target);
-      xhrGet(url, function (err, text) {
-        if (err || !text) { done(null); return; }
-        var t = text;
-        try {
-          var j = JSON.parse(text);
-          if (j && j.responseData && j.responseData.translatedText) t = j.responseData.translatedText;
-        } catch (e) {}
-        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
-      });
-      return;
-    }
-    if (state.engine === "custom") {
-      var api = state.apiUrl;
-      if (!api) { done(null); return; }
-      api = api.replace("{text}", encodeURIComponent(trimmed));
-      api = api.replace("{key}", encodeURIComponent(state.apiKey || ""));
-      api = api.replace("{prompt}", encodeURIComponent(state.prompt || ""));
-      xhrGet(api, function (err, text) {
-        if (err || !text) { done(null); return; }
-        var t = text;
-        try {
-          var j = JSON.parse(text);
-          if (j && typeof j.translatedText === "string") t = j.translatedText;
-          else if (j && typeof j.translation === "string") t = j.translation;
-          else if (typeof j === "string") t = j;
-        } catch (e) {}
-        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
-      });
-      return;
-    }
-    done(null);
-  }
-
-  function scheduleRefresh(self) {
-    setTimeout(function () {
-      try {
-        if (self && typeof self.refresh === "function") self.refresh();
-      } catch (e) {}
-    }, 0);
+  // 命中词典则返回替换后的文本，否则返回 null（保持原文）
+  function applyText(text) {
+    if (!state.enabled || typeof text !== "string" || !/[^\s\\]/.test(text)) return null;
+    var parts = splitParts(text);
+    var plain = plainOf(parts);
+    var normed = norm(plain);
+    if (!normed) return null;
+    var hit = dictGet(normed) || dictGet(plain);
+    if (typeof hit !== "string") return null;
+    var out = recombine(parts, hit);
+    return (out && out !== text) ? out : null;
   }
 
   function patchDrawTextEx() {
@@ -151,39 +75,8 @@
 
     Window_Base.prototype.drawTextEx = function (text, x, y) {
       try {
-        var self = this;
-        var useText = text;
-        if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
-          var parts = splitParts(text);
-          var plain = plainOf(parts);
-          var normed = norm(plain);
-          if (normed) {
-            var k = keyOf(normed);
-            var hit = cache[k];
-            if (typeof hit === "string") {
-              useText = hit;
-            } else {
-              var sync = dictGet(normed) || dictGet(plain);
-              if (typeof sync === "string") {
-                var out = recombine(parts, sync);
-                if (out && out !== text) { cache[k] = out; saveCache(); useText = out; }
-              } else if (!sessionPending[k]) {
-                sessionPending[k] = true;
-                var origText = text;
-                translatePlain(plain, function (tr) {
-                  delete sessionPending[k];
-                  if (!tr || typeof tr !== "string") { cache[k] = origText; saveCache(); return; }
-                  var out2 = recombine(parts, tr);
-                  if (!out2 || out2 === origText) return;
-                  cache[k] = out2;
-                  saveCache();
-                  scheduleRefresh(self);
-                });
-              }
-            }
-          }
-        }
-        return orig.call(this, useText, x, y);
+        var out = applyText(text);
+        return orig.call(this, (out || text), x, y);
       } catch (e) {
         return orig.apply(this, arguments);
       }
@@ -198,24 +91,8 @@
     if (typeof orig !== "function") return;
     Bitmap.prototype.drawText = function (text, x, y, maxWidth, lineHeight, align) {
       try {
-        if (state.enabled && typeof text === "string" && /[^\s\\]/.test(text)) {
-          var parts = splitParts(text);
-          var plain = plainOf(parts);
-          var normed = norm(plain);
-          if (normed) {
-            var hit = cache[keyOf(normed)];
-            if (typeof hit === "string") {
-              text = hit;
-            } else {
-              var sync = dictGet(normed) || dictGet(plain);
-              if (typeof sync === "string") {
-                var out = recombine(parts, sync);
-                if (out) { cache[keyOf(normed)] = out; saveCache(); text = out; }
-              }
-            }
-          }
-        }
-        return orig.call(this, text, x, y, maxWidth, lineHeight, align);
+        var out = applyText(text);
+        return orig.call(this, (out || text), x, y, maxWidth, lineHeight, align);
       } catch (e) {
         return orig.apply(this, arguments);
       }
@@ -240,9 +117,9 @@
         }
       } catch (e) {}
     },
-    resetSession: function () { sessionPending = {}; },
+    resetSession: function () { /* 纯词典模式无会话状态 */ },
     getState: function () {
-      return { enabled: state.enabled, engine: state.engine, target: state.target, cacheKey: cacheKey };
+      return { enabled: state.enabled, mode: "dict", dictCount: Object.keys(state.dictionary).length };
     }
   };
 
