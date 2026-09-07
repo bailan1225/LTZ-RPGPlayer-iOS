@@ -5,6 +5,7 @@ enum TranslationEngine: Int {
     case offline = 0
     case mymemory = 1
     case custom = 2
+    case agnes = 3
 }
 
 struct TranslationConfig {
@@ -173,6 +174,29 @@ final class TranslatorEngine {
             if !config.apiKey.isEmpty {
                 req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             }
+            req.httpBody = bodyData
+            session.dataTask(with: req) { [weak self] data, _, _ in
+                guard let data = data else { completion(nil); return }
+                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
+        case .agnes:
+            // Agnes 2.5 Flash：官方 OpenAI 兼容接口（https://apihub.agnes-ai.com/v1/chat/completions）
+            let agnesURL = "https://apihub.agnes-ai.com/v1/chat/completions"
+            let agnesModel = config.model.isEmpty ? "agnes-2.5-flash" : config.model
+            var body: [String: Any] = [
+                "model": agnesModel,
+                "messages": [
+                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                    ["role": "user", "content": String(text.prefix(maxTextLength))]
+                ],
+                "temperature": 0.3
+            ]
+            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+                  let url = URL(string: agnesURL) else { completion(nil); return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             req.httpBody = bodyData
             session.dataTask(with: req) { [weak self] data, _, _ in
                 guard let data = data else { completion(nil); return }

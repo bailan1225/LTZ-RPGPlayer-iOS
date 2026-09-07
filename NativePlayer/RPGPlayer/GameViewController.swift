@@ -15,31 +15,38 @@ final class LocalHTTPServer {
         self.queue = DispatchQueue(label: "localhttp", qos: .userInitiated)
     }
 
-    /// 启动监听随机端口，返回 baseURL（http://127.0.0.1:<port>/）
-    func start() -> URL? {
-        if listener != nil { return baseURL() }
+    /// 异步启动监听随机端口；就绪后回调 onReady(port)，失败回调 onFailure。
+    /// 注意：NWListener 是异步启动，必须先等 state == .ready 再让 WKWebView 发起请求，
+    /// 否则会出现 "Could not connect to the server"。
+    func start(onReady: @escaping (UInt16) -> Void, onFailure: @escaping () -> Void) {
+        guard listener == nil else { return }
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
             params.requiredInterfaceType = .loopback
             let l = try NWListener(using: params, on: .any)
             l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
+            l.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    self?.listener = l
+                    if let p = l.port { onReady(p.rawValue) }
+                case .failed, .cancelled:
+                    self?.listener = nil
+                    onFailure()
+                default:
+                    break
+                }
+            }
             l.start(queue: queue)
-            listener = l
-            return baseURL()
         } catch {
-            return nil
+            onFailure()
         }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
-    }
-
-    private func baseURL() -> URL? {
-        guard let port = listener?.port else { return nil }
-        return URL(string: "http://127.0.0.1:\(port.rawValue)/")
     }
 
     private func handle(_ conn: NWConnection) {
@@ -52,7 +59,9 @@ final class LocalHTTPServer {
             guard let self = self else { conn.cancel(); return }
             var acc = data
             if let chunk = chunk { acc.append(chunk) }
-            // 请求头以 \r\n\r\n 结束
+            // 请求头以 
+
+ 结束
             if let range = acc.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(data: acc[..<range.lowerBound], encoding: .utf8) ?? ""
                 self.respond(conn, head: head)
@@ -77,6 +86,7 @@ final class LocalHTTPServer {
         guard parts.count >= 2, parts[0] == "GET" else { conn.cancel(); return }
         var path = parts[1]
         if let qi = path.firstIndex(of: "?") { path = String(path[..<qi]) }
+        // 日文/中文/带空格文件名：浏览器会百分号编码，这里解码还原
         let decoded = path.removingPercentEncoding ?? path
         let rel = decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
@@ -85,13 +95,13 @@ final class LocalHTTPServer {
         guard fileURL.path == rootPath || fileURL.path.hasPrefix(rootPath + "/") else { conn.cancel(); return }
 
         var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir) else {
+        guard let resolved = resolveFile(fileURL),
+              FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) else {
             send(conn, status: 404, mime: "text/plain", body: Data("404 Not Found".utf8))
             return
         }
         if isDir.boolValue {
-            let idx = fileURL.appendingPathComponent("index.html")
-            guard FileManager.default.fileExists(atPath: idx.path),
+            guard let idx = resolveFile(resolved.appendingPathComponent("index.html")),
                   let body = try? Data(contentsOf: idx) else {
                 send(conn, status: 404, mime: "text/plain", body: Data("404 Not Found".utf8))
                 return
@@ -99,11 +109,23 @@ final class LocalHTTPServer {
             send(conn, status: 200, mime: "text/html; charset=utf-8", body: body)
             return
         }
-        guard let body = try? Data(contentsOf: fileURL) else {
+        guard let body = try? Data(contentsOf: resolved) else {
             send(conn, status: 500, mime: "text/plain", body: Data("500".utf8))
             return
         }
-        send(conn, status: 200, mime: mimeType(fileURL.pathExtension), body: body)
+        send(conn, status: 200, mime: mimeType(resolved.pathExtension), body: body)
+    }
+
+    /// 精确命中失败时在同目录做大小写不敏感匹配（兼容插件/资源文件名大小写不一致）
+    private func resolveFile(_ url: URL) -> URL? {
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        let dir = url.deletingLastPathComponent()
+        let name = url.lastPathComponent
+        guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return nil }
+        for item in items where item.lastPathComponent.compare(name, options: .caseInsensitive) == .orderedSame {
+            return item
+        }
+        return nil
     }
 
     private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
@@ -275,11 +297,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func loadGame() {
-        // 目录名含 [ ] 空格等特殊字符时 file:// 相对资源加载失败，先自动重命名为安全名
         let safeDir = SafePath.sanitize(gameDir)
         guard let target = GameDetector.resolveLoadTarget(for: safeDir) else {
             let alert = UIAlertController(title: "无法识别游戏目录",
-                                          message: "\(safeDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
+                                          message: "(safeDir.lastPathComponent) 里没有找到 index.html 或 www/js 核心文件。",
                                           preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .default))
             present(alert, animated: true)
@@ -287,25 +308,27 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         }
         // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
         GameDetector.fixPluginAliases(in: target.readRoot)
-        // 本地 HTTP 服务器加载：规避 file:// 下 XHR 加载 data/*.json 失败（iOS 17）
         httpServer?.stop()
         let server = LocalHTTPServer(root: target.readRoot)
-        guard let base = server.start() else {
-            // 服务器启动失败兜底：回退 file:// 直接加载
-            let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
-            webView.loadFileURL(target.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
-            return
-        }
         httpServer = server
-        // index.html 相对 root 的路径
-        let rootPath = target.readRoot.standardizedFileURL.path
-        var rel = target.index.standardizedFileURL.path
-        if rel.hasPrefix(rootPath) {
-            rel = String(rel.dropFirst(rootPath.count))
-        }
-        rel = rel.hasPrefix("/") ? String(rel.dropFirst()) : rel
-        let url = base.appendingPathComponent(rel)
-        webView.load(URLRequest(url: url))
+        // 等待服务器就绪（NWListener 异步启动）后再加载，避免 Could not connect
+        server.start(onReady: { [weak self] port in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let rootPath = target.readRoot.standardizedFileURL.path
+                var rel = target.index.standardizedFileURL.path
+                if rel.hasPrefix(rootPath) { rel = String(rel.dropFirst(rootPath.count)) }
+                rel = rel.hasPrefix("/") ? String(rel.dropFirst()) : rel
+                let base = URL(string: "http://127.0.0.1:(port)/")!
+                self.webView.load(URLRequest(url: base.appendingPathComponent(rel)))
+            }
+        }, onFailure: { [weak self] in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
+                self.webView.loadFileURL(target.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
+            }
+        })
     }
 
     // MARK: - WKScriptMessageHandler
@@ -322,6 +345,15 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         print("provisional error:", error.localizedDescription)
-        CrashReporter.log("GameViewController provisional error: \(error.localizedDescription)")
+        CrashReporter.log("GameViewController provisional error: (error.localizedDescription)")
+        let desc = error.localizedDescription.lowercased()
+        if desc.contains("could not connect") || desc.contains("network connection") {
+            let alert = UIAlertController(
+                title: "无法连接本地服务器",
+                message: "本机回环加载被系统拦截。请到 设置 → 隐私与安全性 → 本地网络 允许本 App，然后点左上角刷新重试。",
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+        }
     }
 }

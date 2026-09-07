@@ -19,7 +19,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         title = "翻译设置"
         tableView = UITableView(frame: .zero, style: .insetGrouped)
 
-        engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API"])
+        engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API", "Agnes"])
         engineControl.selectedSegmentIndex = defaults.integer(forKey: "tr_engine")
         engineControl.addTarget(self, action: #selector(engineChanged), for: .valueChanged)
 
@@ -104,7 +104,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         switch section {
         case 0: return "翻译引擎"
         case 1: return "语言"
-        case 2: return "自定义 API（引擎选自定义API时生效）"
+        case 2: return "API 设置（自定义API / Agnes 引擎）"
         case 3: return ""
         default: return nil
         }
@@ -113,7 +113,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 0:
-            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON（含 model、messages、提示词），Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等，返回 choices[0].message.content。"
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：官方 OpenAI 兼容接口，固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash（可在下方填写覆盖），只需在 API Key 填 Agnes 的 Key。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON（含 model、messages、提示词），Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等，返回 choices[0].message.content。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         case 4:
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

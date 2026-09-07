@@ -9,7 +9,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         CrashReporter.install()
         UserDefaults.standard.register(defaults: [
-            "tr_engine": 1,
+            "tr_engine": 3,
             "tr_source": "ja",
             "tr_target": "zh-CN",
             "tr_api_url": "",
