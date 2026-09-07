@@ -217,38 +217,97 @@ final class TranslatorEngine {
                 completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .aqua:
-            // AQUA 网关（acu.ltzy.top）：OpenAI 兼容，免费模型直用，默认 glm-4-flash
-            let aquaURL = "https://api.ltzy.top/v1/chat/completions"
-            // 默认选免费+健康分高+翻译质量好的 glm-4-flash-250414；勿用收费 aqua/deepseek-v4-flash
-            let aquaModel = config.model.isEmpty ? "glm-4-flash-250414" : config.model
-            var body: [String: Any] = [
-                "model": aquaModel,
-                "messages": [
-                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
-                    ["role": "user", "content": String(text.prefix(maxTextLength))]
-                ],
-                "temperature": 0.3,
-                "max_tokens": 4096
-            ]
-            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
-                  let url = URL(string: aquaURL) else { completion(nil); return }
-            var req = URLRequest(url: url)
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-            req.httpBody = bodyData
-            session.dataTask(with: req) { [weak self] data, _, err in
-                guard let data = data else {
+            // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费），
+            // 失败（端点不可用/无文本/额度）自动回退 OpenAI 兼容 chat/completions
+            let capped = String(text.prefix(maxTextLength))
+            let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
+            guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
+                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else { completion(nil); return }
+            var toolReq = URLRequest(url: toolURL)
+            toolReq.httpMethod = "POST"
+            toolReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            toolReq.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+            toolReq.httpBody = toolData
+            session.dataTask(with: toolReq) { [weak self] data, _, err in
+                guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    completion(nil)
+                    self?.aquaChatFallback(capped, completion: completion)
                     return
                 }
-                guard let r = self?.parseCustom(data) else { completion(nil); return }
-                completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
+                if let r = self.parseToolTranslate(data) {
+                    completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
+                } else {
+                    self.aquaChatFallback(capped, completion: completion)
+                }
             }.resume()
         case .offline:
             completion(nil)
         }
+    }
+
+    /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种可能格式 + 纯文本兜底）
+    private func parseToolTranslate(_ data: Data) -> String? {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for k in ["translation", "translatedText", "text", "result"] {
+                if let v = obj[k] as? String, !v.isEmpty { return v }
+            }
+            if let d = obj["data"] as? [String: Any] {
+                for k in ["text", "translation", "translatedText"] {
+                    if let v = d[k] as? String, !v.isEmpty { return v }
+                }
+                if let arr = d["translations"] as? [[String: Any]],
+                   let x = arr.first?["translatedText"] as? String { return x }
+            }
+            if let choices = obj["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let msg = first["message"] as? [String: Any],
+               let c = msg["content"] as? String { return c }
+            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String {
+                lastError = m
+                print("API error:", m)
+            }
+            return nil
+        }
+        let t = String(data: data, encoding: .utf8) ?? ""
+        return t.isEmpty ? nil : t
+    }
+
+    /// AQUA chat/completions 回退（默认免费模型 glm-4-flash-250414，避开收费 aqua/deepseek-v4-flash）
+    private func aquaChatFallback(_ capped: String, completion: @escaping (String?) -> Void) {
+        let aquaModel = config.model.isEmpty ? "glm-4-flash-250414" : config.model
+        var body: [String: Any] = [
+            "model": aquaModel,
+            "messages": [
+                ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                ["role": "user", "content": capped]
+            ],
+            "temperature": 0.3,
+            "max_tokens": 4096
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+              let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = bodyData
+        session.dataTask(with: req) { [weak self] data, _, _ in
+            guard let data = data else { completion(nil); return }
+            completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+        }.resume()
+    }
+
+    /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
+    private func aquaLang(_ t: String) -> String {
+        let low = t.lowercased()
+        if low.hasPrefix("zh") { return "zh" }
+        if low.hasPrefix("ja") { return "ja" }
+        if low.hasPrefix("ko") { return "ko" }
+        if low.hasPrefix("fr") { return "fr" }
+        if low.hasPrefix("de") { return "de" }
+        if low.hasPrefix("ru") { return "ru" }
+        if low.hasPrefix("es") { return "es" }
+        return "en"
     }
 
     /// 自定义 API 响应解析：OpenAI 兼容 choices[0].message.content / translatedText / translation / data.translations / 纯文本

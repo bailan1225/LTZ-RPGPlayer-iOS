@@ -180,14 +180,10 @@
       });
       return;
     }
-    if (state.engine === "agnes" || state.engine === "aqua") {
-      // Agnes 2.5 Flash / AQUA 网关（acu.ltzy.top）：OpenAI 兼容，固定地址 + 默认免费模型
-      var fixedUrl = state.engine === "agnes"
-        ? "https://apihub.agnes-ai.com/v1/chat/completions"
-        : "https://api.ltzy.top/v1/chat/completions";
-      var fixedModel = state.engine === "agnes" ? "agnes-2.5-flash" : "glm-4-flash-250414";
+    if (state.engine === "agnes") {
+      // Agnes 2.5 Flash：OpenAI 兼容，固定地址 + 默认免费模型
       var bodyObj = {
-        model: state.model || fixedModel,
+        model: state.model || "agnes-2.5-flash",
         messages: [
           { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
           { role: "user", content: trimmed }
@@ -195,7 +191,7 @@
         temperature: 0.3,
         max_tokens: 4096
       };
-      xhrPostJSON(fixedUrl, bodyObj, state.apiKey || "", function (err, text) {
+      xhrPostJSON("https://apihub.agnes-ai.com/v1/chat/completions", bodyObj, state.apiKey || "", function (err, text) {
         if (err || !text) { done(null); return; }
         var t = text;
         try {
@@ -209,6 +205,61 @@
         done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
       });
       return;
+    }
+    if (state.engine === "aqua") {
+      // AQUA 网关：官方翻译工具端点 /v1/tools/translate（自动识别源语言），失败回退 chat/completions
+      xhrPostJSON("https://api.ltzy.top/v1/tools/translate",
+        { text: trimmed, to: aquaLang(state.target) }, state.apiKey || "", function (err, text) {
+        if (err || !text) {
+          // 回退：OpenAI 兼容 chat/completions（默认免费 glm-4-flash-250414）
+          var fb = {
+            model: state.model || "glm-4-flash-250414",
+            messages: [
+              { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
+              { role: "user", content: trimmed }
+            ],
+            temperature: 0.3,
+            max_tokens: 4096
+          };
+          xhrPostJSON("https://api.ltzy.top/v1/chat/completions", fb, state.apiKey || "", function (err2, text2) {
+            if (err2 || !text2) { done(null); return; }
+            var t2 = text2;
+            try {
+              var j2 = JSON.parse(text2);
+              if (j2 && j2.choices && j2.choices[0] && j2.choices[0].message && typeof j2.choices[0].message.content === "string") t2 = j2.choices[0].message.content;
+              else if (j2 && j2.error && j2.error.message) { done(null); return; }
+              else if (j2 && typeof j2.translatedText === "string") t2 = j2.translatedText;
+              else if (j2 && typeof j2.translation === "string") t2 = j2.translation;
+            } catch (e2) {}
+            done((typeof t2 === "string" && norm(t2) !== trimmed) ? norm(t2) : null);
+          });
+          return;
+        }
+        var t = text;
+        try {
+          var j = JSON.parse(text);
+          if (j && typeof j.translation === "string") t = j.translation;
+          else if (j && typeof j.translatedText === "string") t = j.translatedText;
+          else if (j && typeof j.text === "string") t = j.text;
+          else if (j && j.data && typeof j.data.text === "string") t = j.data.text;
+          else if (j && j.data && typeof j.data.translatedText === "string") t = j.data.translatedText;
+          else if (j && j.choices && j.choices[0] && j.choices[0].message && typeof j.choices[0].message.content === "string") t = j.choices[0].message.content;
+          else if (j && j.error && j.error.message) { done(null); return; }
+        } catch (e) {}
+        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
+      });
+      return;
+    }
+    function aquaLang(t) {
+      var low = String(t || "zh").toLowerCase();
+      if (low.indexOf("zh") === 0) return "zh";
+      if (low.indexOf("ja") === 0) return "ja";
+      if (low.indexOf("ko") === 0) return "ko";
+      if (low.indexOf("fr") === 0) return "fr";
+      if (low.indexOf("de") === 0) return "de";
+      if (low.indexOf("ru") === 0) return "ru";
+      if (low.indexOf("es") === 0) return "es";
+      return "en";
     }
     done(null);
   }
