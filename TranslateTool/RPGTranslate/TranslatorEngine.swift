@@ -217,8 +217,7 @@ final class TranslatorEngine {
                 completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .aqua:
-            // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费），
-            // 失败（端点不可用/无文本/额度）自动回退 OpenAI 兼容 chat/completions
+            // AQUA 网关：仅使用官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费），不调用模型接口
             let capped = String(text.prefix(maxTextLength))
             let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
@@ -231,14 +230,11 @@ final class TranslatorEngine {
             session.dataTask(with: toolReq) { [weak self] data, _, err in
                 guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    self?.aquaChatFallback(capped, completion: completion)
+                    completion(nil)
                     return
                 }
-                if let r = self.parseToolTranslate(data) {
-                    completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
-                } else {
-                    self.aquaChatFallback(capped, completion: completion)
-                }
+                guard let r = self.parseToolTranslate(data) else { completion(nil); return }
+                completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
             completion(nil)
@@ -272,30 +268,6 @@ final class TranslatorEngine {
         return t.isEmpty ? nil : t
     }
 
-    /// AQUA chat/completions 回退（默认免费模型 glm-4-flash-250414，避开收费 aqua/deepseek-v4-flash）
-    private func aquaChatFallback(_ capped: String, completion: @escaping (String?) -> Void) {
-        let aquaModel = config.model.isEmpty ? "glm-4-flash-250414" : config.model
-        var body: [String: Any] = [
-            "model": aquaModel,
-            "messages": [
-                ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
-                ["role": "user", "content": capped]
-            ],
-            "temperature": 0.3,
-            "max_tokens": 4096
-        ]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
-              let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-        req.httpBody = bodyData
-        session.dataTask(with: req) { [weak self] data, _, _ in
-            guard let data = data else { completion(nil); return }
-            completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
-        }.resume()
-    }
 
     /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
     private func aquaLang(_ t: String) -> String {

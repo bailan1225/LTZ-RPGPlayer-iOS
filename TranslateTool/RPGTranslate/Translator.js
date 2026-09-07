@@ -207,34 +207,10 @@
       return;
     }
     if (state.engine === "aqua") {
-      // AQUA 网关：官方翻译工具端点 /v1/tools/translate（自动识别源语言），失败回退 chat/completions
+      // AQUA 网关：仅使用官方翻译工具端点 /v1/tools/translate（自动识别源语言），不调用模型接口
       xhrPostJSON("https://api.ltzy.top/v1/tools/translate",
         { text: trimmed, to: aquaLang(state.target) }, state.apiKey || "", function (err, text) {
-        if (err || !text) {
-          // 回退：OpenAI 兼容 chat/completions（默认免费 glm-4-flash-250414）
-          var fb = {
-            model: state.model || "glm-4-flash-250414",
-            messages: [
-              { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
-              { role: "user", content: trimmed }
-            ],
-            temperature: 0.3,
-            max_tokens: 4096
-          };
-          xhrPostJSON("https://api.ltzy.top/v1/chat/completions", fb, state.apiKey || "", function (err2, text2) {
-            if (err2 || !text2) { done(null); return; }
-            var t2 = text2;
-            try {
-              var j2 = JSON.parse(text2);
-              if (j2 && j2.choices && j2.choices[0] && j2.choices[0].message && typeof j2.choices[0].message.content === "string") t2 = j2.choices[0].message.content;
-              else if (j2 && j2.error && j2.error.message) { done(null); return; }
-              else if (j2 && typeof j2.translatedText === "string") t2 = j2.translatedText;
-              else if (j2 && typeof j2.translation === "string") t2 = j2.translation;
-            } catch (e2) {}
-            done((typeof t2 === "string" && norm(t2) !== trimmed) ? norm(t2) : null);
-          });
-          return;
-        }
+        if (err || !text) { done(null); return; }
         var t = text;
         try {
           var j = JSON.parse(text);
