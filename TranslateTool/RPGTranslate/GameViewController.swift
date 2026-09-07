@@ -59,9 +59,7 @@ final class LocalHTTPServer {
             guard let self = self else { conn.cancel(); return }
             var acc = data
             if let chunk = chunk { acc.append(chunk) }
-            // 请求头以 
-
- 结束
+            // 请求头以空行结束
             if let range = acc.range(of: Data("\r\n\r\n".utf8)) {
                 let head = String(data: acc[..<range.lowerBound], encoding: .utf8) ?? ""
                 self.respond(conn, head: head)

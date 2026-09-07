@@ -189,7 +189,8 @@ final class TranslatorEngine {
                     ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
                     ["role": "user", "content": String(text.prefix(maxTextLength))]
                 ],
-                "temperature": 0.3
+                "temperature": 0.3,
+                "max_tokens": 4096
             ]
             guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
                   let url = URL(string: agnesURL) else { completion(nil); return }
