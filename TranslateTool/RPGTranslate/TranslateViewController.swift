@@ -48,8 +48,8 @@ final class TranslateViewController: UITableViewController {
         let w = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
             let s = DataTranslator.scanStats(self.game)
-            guard !w.isCancelled else { return }
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !(self.scanTask?.isCancelled ?? true) else { return }
                 self.stats = s
                 self.tableView.reloadData()
             }
@@ -160,7 +160,7 @@ final class TranslateViewController: UITableViewController {
         switch section {
         case 0: return 2
         case 1: return 3
-        case 2: return isRunning ? 2 : 4
+        case 2: return isRunning ? 2 : 5
         default: return 0
         }
     }
@@ -213,10 +213,14 @@ final class TranslateViewController: UITableViewController {
                 phaseLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12)
             ])
         case (2, 2):
+            cell.textLabel?.text = "应用翻译文件（mtool/JSON）"
+            cell.textLabel?.textColor = .systemBlue
+            cell.selectionStyle = .default
+        case (2, 3):
             cell.textLabel?.text = "导出到文件App"
             cell.textLabel?.textColor = .systemGreen
             cell.selectionStyle = .default
-        case (2, 3):
+        case (2, 4):
             cell.textLabel?.text = "恢复原版 data"
             cell.textLabel?.textColor = .systemOrange
             cell.selectionStyle = .default
@@ -233,11 +237,65 @@ final class TranslateViewController: UITableViewController {
         case 0:
             isRunning ? stopTranslate() : startTranslate()
         case 2:
-            exportGame()
+            applyTranslationFile()
         case 3:
+            exportGame()
+        case 4:
             restore()
         default:
             break
         }
+    }
+
+    // MARK: - 应用 mtool/外部翻译文件
+
+    private func applyTranslationFile() {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("translations", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !files.isEmpty else {
+            let a = UIAlertController(
+                title: "没有翻译文件",
+                message: "用文件App把 mtool 或其他工具导出的 JSON 翻译文件（{原文: 译文} 格式）放入：\n\n文件App → 我的 iPhone → RPG 翻译器 → translations 文件夹\n\n放好后重新点此项选择文件应用。\n\n提示：命名为 override.json 的词典会在翻译时自动优先命中（精修/术语一致）。",
+                preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        let sheet = UIAlertController(title: "应用翻译文件", message: "选择 translations 里的 JSON（应用前自动备份 data）", preferredStyle: .actionSheet)
+        for f in files {
+            sheet.addAction(UIAlertAction(title: f.lastPathComponent, style: .default) { [weak self] _ in
+                guard let self = self else { return }
+                self.applyFile(f)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func applyFile(_ url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              !obj.isEmpty else {
+            let a = UIAlertController(title: "格式不正确", message: "翻译文件需要是 {原文: 译文} 的 JSON 对象。", preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        let backed = DataTranslator.backupData(game) != nil
+        let r = DataTranslator.applyMapping(obj, to: game)
+        let msg = "应用完成：写回 \(r.refs) 处 / \(r.files) 个文件"
+            + (backed ? "（已自动备份原 data）" : "（备份失败，请手动备份）")
+        let a = UIAlertController(title: "完成", message: msg, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
     }
 }

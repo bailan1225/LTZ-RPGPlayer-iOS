@@ -291,6 +291,32 @@ final class DataTranslator {
 
     // MARK: - 写回
 
+    /// 全局覆盖词典（mtool/精修翻译文件）：Documents/translations/override.json，{原文: 译文}
+    /// 翻译时命中该词典的句子直接采用，不发 API，保证术语与精修一致
+    static func overrides() -> [String: String] {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let url = docs.appendingPathComponent("translations/override.json")
+        guard let d = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
+        return obj
+    }
+
+    /// 应用外部翻译文件（mtool 或其他工具导出的 {原文: 译文} JSON），直接写回游戏 data
+    static func applyMapping(_ mapping: [String: String], to game: GameInfo) -> (files: Int, refs: Int) {
+        let fm = FileManager.default
+        let files = ((try? fm.contentsOfDirectory(at: game.dataDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+        var filesChanged = 0
+        var refsChanged = 0
+        for f in files {
+            guard let r = scanFile(f) else { continue }
+            let changed = writeBackFile(r, mapping: mapping, to: f)
+            refsChanged += changed
+            if changed > 0 { filesChanged += 1 }
+        }
+        return (filesChanged, refsChanged)
+    }
+
     private static func stringAt(_ node: Any, _ path: [PathComp]) -> String? {
         var cur: Any = node
         for comp in path {
@@ -399,17 +425,20 @@ final class DataTranslator {
             return
         }
 
-        // 翻译（并发 3，串行回写映射）
+        // 翻译（并发 3，串行回写映射）；先应用覆盖词典（mtool/精修），命中的不发 API
         let engine = TranslatorEngine(config: config)
-        var mapping: [String: String] = [:]
+        let ovr = overrides()
+        var mapping: [String: String] = ovr
+        let toTranslate = unique.filter { mapping[$0] == nil }
         let semaphore = DispatchSemaphore(value: 3)
         let queue = DispatchQueue(label: "rpgtranslate.batch")
         let group = DispatchGroup()
-        var done = 0
+        var done = unique.count - toTranslate.count
         let total = unique.count
-        progress(TranslateProgress(phase: "开始翻译…", done: 0, total: total))
+        progress(TranslateProgress(phase: done > 0 ? "覆盖词典命中 \(done) 条，继续翻译…" : "开始翻译…",
+                                   done: done, total: total))
 
-        for item in unique {
+        for item in toTranslate {
             if cancelled() { break }
             semaphore.wait()
             group.enter()
