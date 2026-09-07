@@ -126,7 +126,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func saved(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
-        toast(error == nil ? "截图已保存到相册" : "保存失败：\(error.localizedDescription)")
+        toast(error == nil ? "截图已保存到相册" : "保存失败：\(error?.localizedDescription ?? "未知")")
     }
 
     @objc private func toggleCheat() {
