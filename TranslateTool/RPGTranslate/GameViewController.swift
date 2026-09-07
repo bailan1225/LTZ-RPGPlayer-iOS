@@ -75,25 +75,24 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
+        // iOS 17 触摸/键盘细节：点击更跟手、拖拽收起键盘
         webView.scrollView.bounces = false
-        webView.allowsBackForwardNavigationGestures = true
+        webView.scrollView.delaysContentTouches = false
+        webView.scrollView.canCancelContentTouches = true
+        webView.scrollView.keyboardDismissMode = .interactive
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
+        // 全屏沉浸：用 view 边缘而非 safeArea，横屏时画面更大（不缩进刘海凹口）
         NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            webView.topAnchor.constraint(equalTo: view.topAnchor),
             webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
     private func setupToolbar() {
         let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
-        let shot = UIBarButtonItem(
-            image: UIImage(systemName: "camera"),
-            style: .plain, target: self, action: #selector(takeShot))
-        shot.tintColor = .systemGray
-        shot.accessibilityLabel = "截图"
         let save = UIBarButtonItem(
             image: UIImage(systemName: "externaldrive"),
             style: .plain, target: self, action: #selector(manageSaves))
@@ -109,24 +108,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
         cheat.accessibilityLabel = "作弊器"
-        toolbarItems = [reload, .flexibleSpace(), shot, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
+        toolbarItems = [reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
-    }
-
-    /// 截图保存到相册（mtool 截图功能；首次使用会请求相册权限）
-    @objc private func takeShot() {
-        let config = WKSnapshotConfiguration()
-        webView.takeSnapshot(with: config) { [weak self] image, error in
-            guard let self = self, let image = image, error == nil else {
-                self?.toast("截图失败：\(error?.localizedDescription ?? "未知")")
-                return
-            }
-            UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.saved(_:didFinishSavingWithError:contextInfo:)), nil)
-        }
-    }
-
-    @objc private func saved(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
-        toast(error == nil ? "截图已保存到相册" : "保存失败：\(error?.localizedDescription ?? "未知")")
     }
 
     @objc private func toggleCheat() {
@@ -244,6 +227,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func reload() {
+        webView.stopLoading()
         loadGame()
     }
 
