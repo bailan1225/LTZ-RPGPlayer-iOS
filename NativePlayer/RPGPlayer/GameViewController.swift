@@ -108,7 +108,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     /// 截图保存到相册（mtool 截图功能；首次使用会请求相册权限）
     @objc private func takeShot() {
-        let config = webView.snapshotConfiguration()
+        let config = WKSnapshotConfiguration()
         webView.takeSnapshot(with: config) { [weak self] image, error in
             guard let self = self, let image = image, error == nil else {
                 self?.toast("截图失败：\(error?.localizedDescription ?? "未知")")
