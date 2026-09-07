@@ -9,6 +9,9 @@ final class LocalHTTPServer {
     private var listener: NWListener?
     private let root: URL
     private let queue: DispatchQueue
+    /// 文件名(小写)→URL 索引：避免每次请求全目录扫描（游戏加载上千资源时 O(n²) 卡顿/白屏）
+    private var fileIndex: [String: URL] = [:]
+    private var indexBuilt = false
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -115,15 +118,43 @@ final class LocalHTTPServer {
     }
 
     /// 精确命中失败时在同目录做大小写不敏感匹配（兼容插件/资源文件名大小写不一致）
+    /// 优化：启动时一次性建立全树索引，命中 O(1)，不再每次请求扫描目录
     private func resolveFile(_ url: URL) -> URL? {
         if FileManager.default.fileExists(atPath: url.path) { return url }
+        buildIndexIfNeeded()
+        let name = url.lastPathComponent.lowercased()
+        if let hit = fileIndex[name] { return hit }
+        // 兜底：可能请求运行时生成的文件（存档等），现场扫一次并回填索引
         let dir = url.deletingLastPathComponent()
-        let name = url.lastPathComponent
-        guard let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return nil }
-        for item in items where item.lastPathComponent.compare(name, options: .caseInsensitive) == .orderedSame {
-            return item
+        if let items = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
+            for item in items where item.lastPathComponent.compare(url.lastPathComponent, options: .caseInsensitive) == .orderedSame {
+                fileIndex[item.lastPathComponent.lowercased()] = item
+                return item
+            }
         }
         return nil
+    }
+
+    private func buildIndexIfNeeded() {
+        guard !indexBuilt else { return }
+        indexBuilt = true
+        var index: [String: URL] = [:]
+        var stack = [root]
+        while let dir = stack.popLast() {
+            guard let items = try? FileManager.default.contentsOfDirectory(
+                at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
+            for item in items {
+                var isDir: ObjCBool = false
+                if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
+                    if isDir.boolValue {
+                        stack.append(item)
+                    } else {
+                        index[item.lastPathComponent.lowercased()] = item
+                    }
+                }
+            }
+        }
+        fileIndex = index
     }
 
     private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
@@ -174,6 +205,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private let gameDir: URL
     private var webView: WKWebView!
     private let defaults = UserDefaults.standard
+    private var loadingView: UIView?
     private var pageLoaded = false
 
     init(gameDir: URL) {
@@ -259,6 +291,51 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        showLoading("正在加载游戏…")
+    }
+
+    private func showLoading(_ text: String) {
+        if loadingView == nil {
+            let box = UIView()
+            box.backgroundColor = UIColor(white: 0, alpha: 0.55)
+            box.layer.cornerRadius = 14
+            let label = UILabel()
+            label.textAlignment = .center
+            label.textColor = .white
+            label.font = .systemFont(ofSize: 15)
+            label.tag = 7
+            let spin = UIActivityIndicatorView(style: .large)
+            spin.color = .white
+            spin.startAnimating()
+            box.addSubview(label)
+            box.addSubview(spin)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            spin.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                spin.centerXAnchor.constraint(equalTo: box.centerXAnchor),
+                spin.topAnchor.constraint(equalTo: box.topAnchor, constant: 18),
+                label.topAnchor.constraint(equalTo: spin.bottomAnchor, constant: 10),
+                label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 16),
+                label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -16),
+                label.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -18)
+            ])
+            box.translatesAutoresizingMaskIntoConstraints = false
+            loadingView = box
+        }
+        guard let box = loadingView else { return }
+        (box.viewWithTag(7) as? UILabel)?.text = text
+        if box.superview == nil {
+            view.addSubview(box)
+            NSLayoutConstraint.activate([
+                box.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                box.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            ])
+        }
+    }
+
+    private func hideLoading() {
+        loadingView?.removeFromSuperview()
+        loadingView = nil
     }
 
     private func setupToolbar() {
@@ -458,8 +535,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         pageLoaded = true
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        hideLoading()
+    }
+
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         print("nav error:", error.localizedDescription)
+        showLoading("加载出错：\(error.localizedDescription)\n点左上角刷新重试")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

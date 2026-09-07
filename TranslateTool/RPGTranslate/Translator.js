@@ -180,6 +180,36 @@
       });
       return;
     }
+    if (state.engine === "agnes" || state.engine === "aqua") {
+      // Agnes 2.5 Flash / AQUA 网关（acu.ltzy.top）：OpenAI 兼容，固定地址 + 默认免费模型
+      var fixedUrl = state.engine === "agnes"
+        ? "https://apihub.agnes-ai.com/v1/chat/completions"
+        : "https://api.ltzy.top/v1/chat/completions";
+      var fixedModel = state.engine === "agnes" ? "agnes-2.5-flash" : "glm-4-flash-250414";
+      var bodyObj = {
+        model: state.model || fixedModel,
+        messages: [
+          { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
+          { role: "user", content: trimmed }
+        ],
+        temperature: 0.3,
+        max_tokens: 4096
+      };
+      xhrPostJSON(fixedUrl, bodyObj, state.apiKey || "", function (err, text) {
+        if (err || !text) { done(null); return; }
+        var t = text;
+        try {
+          var j = JSON.parse(text);
+          if (j && j.choices && j.choices[0] && j.choices[0].message && typeof j.choices[0].message.content === "string") t = j.choices[0].message.content;
+          else if (j && j.error && j.error.message) { done(null); return; }
+          else if (j && typeof j.translatedText === "string") t = j.translatedText;
+          else if (j && typeof j.translation === "string") t = j.translation;
+          else if (typeof j === "string") t = j;
+        } catch (e) {}
+        done((typeof t === "string" && norm(t) !== trimmed) ? norm(t) : null);
+      });
+      return;
+    }
     done(null);
   }
 

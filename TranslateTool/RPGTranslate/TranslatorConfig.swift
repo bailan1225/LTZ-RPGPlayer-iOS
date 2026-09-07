@@ -5,9 +5,9 @@ enum TranslatorConfig {
 
     static func injectionSource() -> String {
         let defaults = UserDefaults.standard
-        let engines = ["offline", "mymemory", "custom"]
+        let engines = ["offline", "mymemory", "custom", "agnes", "aqua"]
         let idx = defaults.integer(forKey: "tr_engine")
-        let engine = engines.indices.contains(idx) ? engines[idx] : "mymemory"
+        let engine = engines.indices.contains(idx) ? engines[idx] : "offline"
 
         // 词典优先级：translations/*.json（mtool 格式外部翻译文件，覆盖）→
         //           Documents/dict.json（自定义）→ 内置样例 dict
