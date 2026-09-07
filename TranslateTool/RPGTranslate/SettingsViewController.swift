@@ -31,7 +31,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         targetField = makeField(placeholder: "如 zh-CN", text: defaults.string(forKey: "tr_target") ?? "zh-CN", secure: false)
         urlField = makeField(placeholder: "https://api.deepseek.com/v1/chat/completions", text: defaults.string(forKey: "tr_api_url") ?? "", secure: false)
         keyField = makeField(placeholder: "API Key（旧 key 过期直接重填）", text: defaults.string(forKey: "tr_api_key") ?? "", secure: true)
-        modelField = makeField(placeholder: "如 deepseek-chat / gpt-4o-mini", text: defaults.string(forKey: "tr_model") ?? "", secure: false)
+        modelField = makeField(placeholder: "如 glm-4-flash / agnes-2.5-flash / deepseek-chat", text: defaults.string(forKey: "tr_model") ?? "", secure: false)
         memEmailField = makeField(placeholder: "MyMemory 注册邮箱（免费提额）", text: defaults.string(forKey: "tr_mem_email") ?? "", secure: false)
         promptField = makeField(placeholder: "如：你是游戏翻译，保持 JRPG 风格，人名不译", text: defaults.string(forKey: "tr_prompt") ?? "", secure: false)
     }

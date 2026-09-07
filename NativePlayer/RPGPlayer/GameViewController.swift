@@ -1,5 +1,152 @@
 import UIKit
 import WebKit
+import Network
+
+/// 轻量本地 HTTP 服务器：WKWebView 以 http://127.0.0.1:<port> 加载游戏，
+/// 彻底规避 file:// 下 XHR 相对资源加载失败（Failed to load: data/xxx.json）与 CORS 限制，
+/// 同时保证 localStorage/IndexedDB（游戏存档）正常工作。仅监听 loopback，无网络权限要求。
+final class LocalHTTPServer {
+    private var listener: NWListener?
+    private let root: URL
+    private let queue: DispatchQueue
+
+    init(root: URL) {
+        self.root = root.standardizedFileURL
+        self.queue = DispatchQueue(label: "localhttp", qos: .userInitiated)
+    }
+
+    /// 启动监听随机端口，返回 baseURL（http://127.0.0.1:<port>/）
+    func start() -> URL? {
+        if listener != nil { return baseURL() }
+        do {
+            let params = NWParameters.tcp
+            params.allowLocalEndpointReuse = true
+            params.requiredInterfaceType = .loopback
+            let l = try NWListener(using: params, on: .any)
+            l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
+            l.start(queue: queue)
+            listener = l
+            return baseURL()
+        } catch {
+            return nil
+        }
+    }
+
+    func stop() {
+        listener?.cancel()
+        listener = nil
+    }
+
+    private func baseURL() -> URL? {
+        guard let port = listener?.port else { return nil }
+        return URL(string: "http://127.0.0.1:\(port.rawValue)/")
+    }
+
+    private func handle(_ conn: NWConnection) {
+        conn.start(queue: queue)
+        receive(conn, data: Data())
+    }
+
+    private func receive(_ conn: NWConnection, data: Data) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
+            guard let self = self else { conn.cancel(); return }
+            var acc = data
+            if let chunk = chunk { acc.append(chunk) }
+            // 请求头以 \r\n\r\n 结束
+            if let range = acc.range(of: Data("\r\n\r\n".utf8)) {
+                let head = String(data: acc[..<range.lowerBound], encoding: .utf8) ?? ""
+                self.respond(conn, head: head)
+                return
+            }
+            if isComplete || error != nil {
+                if !acc.isEmpty, let head = String(data: acc, encoding: .utf8) {
+                    self.respond(conn, head: head)
+                } else {
+                    conn.cancel()
+                }
+                return
+            }
+            self.receive(conn, data: acc)
+        }
+    }
+
+    private func respond(conn: NWConnection, head: String) {
+        defer { conn.cancel() }   // 单请求后关闭，简单可靠
+        let lines = head.components(separatedBy: "\r\n")
+        guard let requestLine = lines.first else { return }
+        let parts = requestLine.split(separator: " ").map(String.init)
+        guard parts.count >= 2, parts[0] == "GET" else { return }
+        var path = parts[1]
+        if let qi = path.firstIndex(of: "?") { path = String(path[..<qi]) }
+        let decoded = path.removingPercentEncoding ?? path
+        let rel = decoded.hasPrefix("/") ? String(decoded.dropFirst()) : decoded
+        let fileURL = root.appendingPathComponent(rel).standardizedFileURL
+        // 目录穿越防护：只允许 root 范围内
+        let rootPath = root.path
+        guard fileURL.path == rootPath || fileURL.path.hasPrefix(rootPath + "/") else { return }
+
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir) else {
+            send(conn, status: 404, mime: "text/plain", body: Data("404 Not Found".utf8))
+            return
+        }
+        if isDir {
+            let idx = fileURL.appendingPathComponent("index.html")
+            guard FileManager.default.fileExists(atPath: idx.path),
+                  let body = try? Data(contentsOf: idx) else {
+                send(conn, status: 404, mime: "text/plain", body: Data("404 Not Found".utf8))
+                return
+            }
+            send(conn, status: 200, mime: "text/html; charset=utf-8", body: body)
+            return
+        }
+        guard let body = try? Data(contentsOf: fileURL) else {
+            send(conn, status: 500, mime: "text/plain", body: Data("500".utf8))
+            return
+        }
+        send(conn, status: 200, mime: mimeType(fileURL.pathExtension), body: body)
+    }
+
+    private func send(conn: NWConnection, status: Int, mime: String, body: Data) {
+        let reason = status == 200 ? "OK" : (status == 404 ? "Not Found" : "Error")
+        var head = "HTTP/1.1 \(status) \(reason)\r\n"
+        head += "Content-Type: \(mime)\r\n"
+        head += "Content-Length: \(body.count)\r\n"
+        head += "Connection: close\r\n"
+        head += "Access-Control-Allow-Origin: *\r\n"
+        head += "\r\n"
+        var payload = Data(head.utf8)
+        payload.append(body)
+        conn.send(content: payload, completion: .contentProcessed { _ in conn.cancel() })
+    }
+
+    private func mimeType(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "html", "htm": return "text/html; charset=utf-8"
+        case "js": return "application/javascript; charset=utf-8"
+        case "json": return "application/json; charset=utf-8"
+        case "css": return "text/css; charset=utf-8"
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "ico": return "image/x-icon"
+        case "svg": return "image/svg+xml"
+        case "woff": return "font/woff"
+        case "woff2": return "font/woff2"
+        case "ttf": return "font/ttf"
+        case "otf": return "font/otf"
+        case "ogg": return "audio/ogg"
+        case "m4a": return "audio/mp4"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "mp4": return "video/mp4"
+        case "webm": return "video/webm"
+        case "mov": return "video/quicktime"
+        default: return "application/octet-stream"
+        }
+    }
+}
 
 /// 游戏运行页：WKWebView 加载游戏 index.html，并注入翻译脚本
 final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate {
@@ -36,9 +183,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         forceOrientation(.landscapeLeft)
     }
 
+    private var httpServer: LocalHTTPServer?
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
+        httpServer?.stop()
         forceOrientation(.portrait)
     }
 
@@ -135,12 +285,27 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             present(alert, animated: true)
             return
         }
-        // allowingReadAccessTo 必须是目录 URL（尾斜杠），否则子资源读取被拒
-        let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
-        let rootDir = URL(fileURLWithPath: rootStr, isDirectory: true)
         // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
         GameDetector.fixPluginAliases(in: target.readRoot)
-        webView.loadFileURL(target.index, allowingReadAccessTo: rootDir)
+        // 本地 HTTP 服务器加载：规避 file:// 下 XHR 加载 data/*.json 失败（iOS 17）
+        httpServer?.stop()
+        let server = LocalHTTPServer(root: target.readRoot)
+        guard let base = server.start() else {
+            // 服务器启动失败兜底：回退 file:// 直接加载
+            let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
+            webView.loadFileURL(target.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
+            return
+        }
+        httpServer = server
+        // index.html 相对 root 的路径
+        let rootPath = target.readRoot.standardizedFileURL.path
+        var rel = target.index.standardizedFileURL.path
+        if rel.hasPrefix(rootPath) {
+            rel = String(rel.dropFirst(rootPath.count))
+        }
+        rel = rel.hasPrefix("/") ? String(rel.dropFirst()) : rel
+        let url = base.appendingPathComponent(rel)
+        webView.load(URLRequest(url: url))
     }
 
     // MARK: - WKScriptMessageHandler
