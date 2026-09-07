@@ -24,4 +24,16 @@ enum CrashReporter {
         let msg = "[SIGNAL \(sig) \(Date())] app crashed\n"
         try? msg.write(to: logURL, atomically: true, encoding: .utf8)
     }
+
+    /// 追加一行诊断日志（供列表页「日志」按钮查看/分享）
+    static func log(_ line: String) {
+        let msg = "[LOG \(Date())] \(line)\n"
+        var text = ""
+        if let existing = try? String(contentsOf: logURL, encoding: .utf8) {
+            text = existing.suffix(200_000) + msg
+        } else {
+            text = msg
+        }
+        try? text.write(to: logURL, atomically: true, encoding: .utf8)
+    }
 }
