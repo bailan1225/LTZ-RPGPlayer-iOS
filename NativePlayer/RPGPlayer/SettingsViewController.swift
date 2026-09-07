@@ -59,7 +59,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 6 : 1
+        section == 0 ? 7 : 1
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
@@ -68,7 +68,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         section == 0
-            ? "离线词典对所有引擎都生效；MyMemory 为免费在线接口（无需密钥，有每日限额）；自定义API地址中的 {text} 替换为原文、{key} 替换为下方 API Key。"
+            ? "离线词典对所有引擎都生效；MyMemory 为免费在线接口（无需密钥，有每日限额）；自定义API地址中的 {text} 替换为原文、{key} 替换为下方 API Key、{prompt} 替换为提示词（对应 AiNiee 提示词优化，可留空）。"
             : nil
     }
 
@@ -80,7 +80,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             case 2: return makeTextFieldCell("源语言（ja/en 等）", key: "tr_source", defaultValue: "ja")
             case 3: return makeTextFieldCell("目标语言（如 zh-CN）", key: "tr_target", defaultValue: "zh-CN")
             case 4: return makeTextFieldCell("自定义API地址（可留空）", key: "tr_api_url", defaultValue: "")
-            default: return makeTextFieldCell("API Key（可留空）", key: "tr_api_key", defaultValue: "")
+            case 5: return makeTextFieldCell("API Key（可留空）", key: "tr_api_key", defaultValue: "")
+            default: return makeTextFieldCell("翻译提示词（可留空）", key: "tr_prompt", defaultValue: "")
             }
         }
         let cell = UITableViewCell(style: .default, reuseIdentifier: nil)

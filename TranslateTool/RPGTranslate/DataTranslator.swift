@@ -17,6 +17,7 @@ struct TextRef {
     let path: [PathComp]
     let text: String  // 原文（含控制码）
     let plain: String // 提取后的纯文本（翻译输入）
+    let term: Bool    // 术语（System 术语/数据库名称等）：优先翻译并作为术语表，保证对话中术语一致
 }
 
 /// 扫描统计（翻译前展示用）
@@ -169,18 +170,18 @@ final class DataTranslator {
 
     // MARK: - 各文件类型提取
 
-    private static func add(_ refs: inout [TextRef], path: [PathComp], text: String) {
+    private static func add(_ refs: inout [TextRef], path: [PathComp], text: String, term: Bool = false) {
         guard !text.isEmpty else { return }
         let plain = ControlCode.plain(of: text)
         guard !plain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        refs.append(TextRef(path: path, text: text, plain: plain))
+        refs.append(TextRef(path: path, text: text, plain: plain, term: term))
     }
 
-    /// System.json：游戏标题 + terms 下所有字符串
+    /// System.json：游戏标题 + terms 下所有字符串（术语）
     private static func collectSystem(_ root: Any, into refs: inout [TextRef]) {
         guard let dict = root as? [String: Any] else { return }
         if let t = dict["gameTitle"] as? String {
-            add(&refs, path: [.key("gameTitle")], text: t)
+            add(&refs, path: [.key("gameTitle")], text: t, term: true)
         }
         if let terms = dict["terms"] {
             collectSystemStrings(terms, path: [.key("terms")], into: &refs)
@@ -189,7 +190,7 @@ final class DataTranslator {
 
     private static func collectSystemStrings(_ node: Any, path: [PathComp], into refs: inout [TextRef]) {
         if let s = node as? String {
-            add(&refs, path: path, text: s)
+            add(&refs, path: path, text: s, term: true)
             return
         }
         if let d = node as? [String: Any] {
@@ -203,11 +204,11 @@ final class DataTranslator {
         }
     }
 
-    /// 通用数据库文件：递归收集命中键的字符串
+    /// 通用数据库文件：递归收集命中键的字符串（名称/简介/描述等，均为术语）
     private static func collectGeneric(_ root: Any, path: [PathComp], into refs: inout [TextRef]) {
         if let s = root as? String {
             if let last = path.last, case .key(let k) = last, genericKeys.contains(k) {
-                add(&refs, path: path, text: s)
+                add(&refs, path: path, text: s, term: true)
             }
             return
         }
@@ -222,11 +223,11 @@ final class DataTranslator {
         }
     }
 
-    /// 地图：displayName + 事件指令
+    /// 地图：displayName（术语）+ 事件指令（对话）
     private static func collectMap(_ root: Any, into refs: inout [TextRef]) {
         guard let dict = root as? [String: Any] else { return }
         if let dn = dict["displayName"] as? String {
-            add(&refs, path: [.key("displayName")], text: dn)
+            add(&refs, path: [.key("displayName")], text: dn, term: true)
         }
         guard let events = dict["events"] as? [Any] else { return }
         for (i, ev) in events.enumerated() {
@@ -239,11 +240,11 @@ final class DataTranslator {
         }
     }
 
-    /// CommonEvents / Troops：name + 事件指令
+    /// CommonEvents / Troops：name（术语）+ 事件指令（对话）
     private static func collectEventsFile(_ root: Any, into refs: inout [TextRef]) {
         guard let dict = root as? [String: Any] else { return }
         if let n = dict["name"] as? String {
-            add(&refs, path: [.key("name")], text: n)
+            add(&refs, path: [.key("name")], text: n, term: true)
         }
         if let list = dict["list"] {
             collectEventCommands(list, path: [.key("list")], into: &refs)
@@ -433,6 +434,7 @@ final class DataTranslator {
         var scanned: [(url: URL, file: (root: Any, refs: [TextRef], hadBOM: Bool))] = []
         var unique: [String] = []
         var seen = Set<String>()
+        var termSeen = Set<String>()
         for f in files {
             if cancelled() { completion(TranslateSummary()); return }
             guard let r = scanFile(f) else { continue }
@@ -441,6 +443,7 @@ final class DataTranslator {
                 if !seen.contains(ref.plain) {
                     seen.insert(ref.plain)
                     unique.append(ref.plain)
+                    if ref.term { termSeen.insert(ref.plain) }
                 }
             }
         }
@@ -450,40 +453,54 @@ final class DataTranslator {
             return
         }
 
-        // 翻译（并发 3，串行回写映射）；先应用覆盖词典（mtool/精修），命中的不发 API
+        // 两阶段翻译（对应 mtool/MoriTranslates 思路）：
+        //  阶段1 术语（System 术语/人名/物品/技能等名称）→ 并入术语表
+        //  阶段2 对话：命中术语表/词典的句子直接采用，保证人名与物品名全篇一致、不发重复请求
         let engine = TranslatorEngine(config: config)
         let ovr = overrides()
         var mapping: [String: String] = ovr
-        let toTranslate = unique.filter { mapping[$0] == nil }
+        let total = unique.count
         let semaphore = DispatchSemaphore(value: 3)
         let queue = DispatchQueue(label: "rpgtranslate.batch")
         let group = DispatchGroup()
-        var done = unique.count - toTranslate.count
-        let total = unique.count
-        progress(TranslateProgress(phase: done > 0 ? "覆盖词典命中 \(done) 条，继续翻译…" : "开始翻译…",
-                                   done: done, total: total))
 
-        for item in toTranslate {
-            if cancelled() { break }
-            semaphore.wait()
-            group.enter()
-            queue.async {
-                engine.translate(item) { result in
-                    // 回跳到串行队列，保证 mapping/done 无数据竞争
-                    queue.async {
-                        if let r = result { mapping[item] = r }
-                        done += 1
-                        if done % 20 == 0 { engine.saveCache() }
-                        DispatchQueue.main.async {
-                            progress(TranslateProgress(phase: "翻译中…", done: done, total: total))
+        func batchTranslate(_ items: [String], _ phase: String) {
+            let toTranslate = items.filter { mapping[$0] == nil }
+            var doneInBatch = 0
+            for item in toTranslate {
+                if cancelled() { break }
+                semaphore.wait()
+                group.enter()
+                queue.async {
+                    engine.translate(item) { result in
+                        queue.async {
+                            if let r = result { mapping[item] = r }
+                            doneInBatch += 1
+                            if doneInBatch % 20 == 0 { engine.saveCache() }
+                            let pd = mapping.count   // 串行队列内读取，避免与主线程竞争
+                            DispatchQueue.main.async {
+                                progress(TranslateProgress(phase: phase, done: pd, total: total))
+                            }
+                            semaphore.signal()
+                            group.leave()
                         }
-                        semaphore.signal()
-                        group.leave()
                     }
                 }
             }
+            group.wait()
+            engine.saveCache()
         }
-        group.wait()
+
+        // 阶段 1：术语
+        progress(TranslateProgress(phase: "翻译术语（人名/物品/技能）…", done: mapping.count, total: total))
+        batchTranslate(unique.filter { termSeen.contains($0) }, "翻译术语（人名/物品/技能）…")
+        // 术语表并入引擎词典：后续对话直接命中
+        engine.mergeDict(mapping)
+        if cancelled() { completion(TranslateSummary()); return }
+
+        // 阶段 2：对话
+        progress(TranslateProgress(phase: "翻译对话…", done: mapping.count, total: total))
+        batchTranslate(unique.filter { !termSeen.contains($0) }, "翻译对话…")
         engine.saveCache()
         saveMapping(mapping, for: game)
 

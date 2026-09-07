@@ -9,6 +9,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     private var targetField: UITextField!
     private var urlField: UITextField!
     private var keyField: UITextField!
+    private var promptField: UITextField!
     private var enabledSwitch: UISwitch!
 
     override func viewDidLoad() {
@@ -28,6 +29,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         targetField = makeField(placeholder: "如 zh-CN", text: defaults.string(forKey: "tr_target") ?? "zh-CN", secure: false)
         urlField = makeField(placeholder: "https://…?q={text}&key={key}", text: defaults.string(forKey: "tr_api_url") ?? "", secure: false)
         keyField = makeField(placeholder: "API Key（旧 key 过期直接重填）", text: defaults.string(forKey: "tr_api_key") ?? "", secure: true)
+        promptField = makeField(placeholder: "如：你是游戏翻译，保持 JRPG 风格，人名不译", text: defaults.string(forKey: "tr_prompt") ?? "", secure: false)
     }
 
     private func makeField(placeholder: String, text: String, secure: Bool) -> UITextField {
@@ -56,6 +58,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         defaults.set(targetField.text ?? "", forKey: "tr_target")
         defaults.set(urlField.text ?? "", forKey: "tr_api_url")
         defaults.set(keyField.text ?? "", forKey: "tr_api_key")
+        defaults.set(promptField.text ?? "", forKey: "tr_prompt")
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -71,7 +74,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         switch section {
         case 0: return 2
         case 1: return 2
-        case 2: return 2
+        case 2: return 3
         case 3: return 2
         default: return 0
         }
@@ -89,7 +92,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
-        case 0: return "MyMemory 免费接口有每日限额；自定义API 地址中 {text} 为原文、{key} 为密钥占位符，返回 JSON 的 translatedText / translation 字段或纯文本。"
+        case 0: return "MyMemory 免费接口有每日限额；自定义API 地址中 {text} 为原文、{key} 为密钥占位符；「翻译提示词」用 {prompt} 占位符附加到请求（对应 AiNiee 提示词优化，不填则不带）。返回 JSON 的 translatedText / translation 字段或纯文本。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         default: return nil
         }
@@ -127,6 +130,10 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = "API Key"
             cell.accessoryView = keyField
             keyField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
+        case (2, 2):
+            cell.textLabel?.text = "翻译提示词"
+            cell.accessoryView = promptField
+            promptField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)
         case (3, 0):
             cell.textLabel?.text = "清除翻译缓存"
             cell.textLabel?.textColor = .systemRed

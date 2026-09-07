@@ -4,6 +4,26 @@ import UIKit
 final class GamesViewController: UITableViewController {
 
     private var games: [URL] = []
+    private var translationCounts: [String: Int] = [:]  // 目录名 → 已翻译词条数
+
+    private static var translationsDir: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("translations", isDirectory: true)
+    }
+
+    /// 读取该游戏已保存的翻译词条数（translations/<目录名>.json，由翻译器/mtool 版生成）
+    private func translationCount(for url: URL) -> Int? {
+        let key = url.lastPathComponent
+        if let hit = translationCounts[key] { return hit }
+        let f = Self.translationsDir.appendingPathComponent(key + ".json")
+        guard let d = try? Data(contentsOf: f),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: String] else {
+            translationCounts[key] = 0
+            return nil
+        }
+        translationCounts[key] = o.count
+        return o.count
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -101,14 +121,18 @@ final class GamesViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
         if games.isEmpty {
             cell.textLabel?.text = "还没有游戏"
             cell.textLabel?.textColor = .secondaryLabel
             cell.accessoryType = .none
         } else {
-            cell.textLabel?.text = displayName(for: games[indexPath.row])
+            let url = games[indexPath.row]
+            cell.textLabel?.text = displayName(for: url)
             cell.textLabel?.textColor = .label
+            if let n = translationCount(for: url), n > 0 {
+                cell.detailTextLabel?.text = "已翻译 \(n) 条（播放时自动命中）"
+            }
             cell.accessoryType = .disclosureIndicator
         }
         return cell

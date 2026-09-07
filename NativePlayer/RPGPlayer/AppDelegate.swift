@@ -16,7 +16,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             "tr_target": "zh-CN",
             "tr_api_url": "",
             "tr_api_key": "",
-            "tr_cache_version": 1
+            "tr_cache_version": 1,
+            "tr_prompt": ""
         ])
 
         let window = UIWindow(frame: UIScreen.main.bounds)

@@ -128,6 +128,30 @@
     } catch (err) { toast("出错: " + err.message); }
   }
 
+  // 快速存档 / 快速读档（槽位 0；对应 mtool 存档快捷键，MV/MZ 通用）
+  function quickSave() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    try {
+      if (window.DataManager && typeof DataManager.saveGame === "function") {
+        DataManager.saveGame(0);
+        toast("已快速存档（槽位0）");
+      } else { toast("存档不可用"); }
+    } catch (err) { toast("存档失败: " + err.message); }
+  }
+
+  function quickLoad() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    try {
+      if (window.DataManager && typeof DataManager.loadGame === "function") {
+        DataManager.loadGame(0);
+        if (window.SceneManager && typeof SceneManager.goto === "function") {
+          SceneManager.goto(Scene_Map);
+        }
+        toast("已读档（槽位0）");
+      } else { toast("读档不可用"); }
+    } catch (err) { toast("读档失败: " + err.message); }
+  }
+
   function cycleEnemyDamage() {
     var opts = [1, 10, 100];
     var idx = opts.indexOf(cheat.enemyDamageMult);
@@ -250,6 +274,8 @@
       ["一击必杀 切换", toggleOneHit],
       ["战斗直接胜利", cheatWin],
       ["战斗直接逃跑", cheatEscape],
+      ["快速存档", quickSave],
+      ["快速读档", quickLoad],
       ["对敌伤害 x", cycleEnemyDamage],
       ["游戏速度 x", cycleSpeed]
     ];

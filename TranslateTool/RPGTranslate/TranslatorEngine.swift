@@ -13,6 +13,7 @@ struct TranslationConfig {
     var target = "zh-CN"
     var apiUrl = ""
     var apiKey = ""
+    var prompt = ""   // 自定义 API 翻译风格提示词（AiNiee 思路），用 {prompt} 占位符附加
 }
 
 /// 批量翻译引擎：内置离线词典 + MyMemory 在线接口 + 自定义 API
@@ -43,6 +44,11 @@ final class TranslatorEngine {
     }
 
     // MARK: - 词典
+
+    /// 动态并入术语表/词典（两阶段翻译：术语结果并入后，对话自动命中）
+    func mergeDict(_ m: [String: String]) {
+        for (k, v) in m where !k.isEmpty && !v.isEmpty { dict[k] = v }
+    }
 
     private func loadDict() {
         let fm = FileManager.default
@@ -129,9 +135,13 @@ final class TranslatorEngine {
             var urlStr = config.apiUrl
                 .replacingOccurrences(of: "{text}", with: percentEncode(String(text.prefix(maxTextLength))))
                 .replacingOccurrences(of: "{key}", with: percentEncode(config.apiKey))
+                .replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
             // 兜底：若模板未替换成功（缺占位符），以 query 附加
             if urlStr.contains("{text}") {
                 urlStr = urlStr.replacingOccurrences(of: "{text}", with: percentEncode(text))
+            }
+            if urlStr.contains("{prompt}") {
+                urlStr = urlStr.replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
             }
             request(URL(string: urlStr), parse: { data in
                 guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

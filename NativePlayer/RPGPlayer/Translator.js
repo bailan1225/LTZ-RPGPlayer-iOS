@@ -14,6 +14,7 @@
     target: cfg.target || "zh-CN",
     apiUrl: cfg.apiUrl || "",
     apiKey: cfg.apiKey || "",
+    prompt: cfg.prompt || "",
     cacheVersion: cfg.cacheVersion || 1,
     translateUI: !!cfg.translateUI,
     dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {}
@@ -117,6 +118,7 @@
       if (!api) { done(null); return; }
       api = api.replace("{text}", encodeURIComponent(trimmed));
       api = api.replace("{key}", encodeURIComponent(state.apiKey || ""));
+      api = api.replace("{prompt}", encodeURIComponent(state.prompt || ""));
       xhrGet(api, function (err, text) {
         if (err || !text) { done(null); return; }
         var t = text;

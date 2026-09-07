@@ -87,6 +87,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     private func setupToolbar() {
         let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
+        let shot = UIBarButtonItem(
+            image: UIImage(systemName: "camera"),
+            style: .plain, target: self, action: #selector(takeShot))
+        shot.tintColor = .systemGray
+        shot.accessibilityLabel = "截图"
         let toggle = UIBarButtonItem(
             image: UIImage(systemName: "character.bubble"),
             style: .plain, target: self, action: #selector(toggleTranslate))
@@ -97,8 +102,32 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
         cheat.accessibilityLabel = "作弊器"
-        toolbarItems = [reload, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
+        toolbarItems = [reload, .flexibleSpace(), shot, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
+    }
+
+    /// 截图保存到相册（mtool 截图功能；首次使用会请求相册权限）
+    @objc private func takeShot() {
+        let config = webView.snapshotConfiguration()
+        webView.takeSnapshot(with: config) { [weak self] image, error in
+            guard let self = self, let image = image, error == nil else {
+                self?.toast("截图失败：\(error?.localizedDescription ?? "未知")")
+                return
+            }
+            UIImageWriteToSavedPhotosAlbum(image, self, #selector(self.saved(_:didFinishSavingWithError:contextInfo:)), nil)
+        }
+    }
+
+    @objc private func saved(_ image: UIImage, didFinishSavingWithError error: Error?, contextInfo: UnsafeRawPointer) {
+        toast(error == nil ? "截图已保存到相册" : "保存失败：\(error.localizedDescription)")
+    }
+
+    private func toast(_ msg: String) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            self.present(alert, animated: true)
+        }
     }
 
     @objc private func toggleCheat() {
