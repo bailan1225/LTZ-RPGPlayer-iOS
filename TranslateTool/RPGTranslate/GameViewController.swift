@@ -12,6 +12,9 @@ final class LocalHTTPServer {
     /// 文件名(小写)→URL 索引：避免每次请求全目录扫描（游戏加载上千资源时 O(n²) 卡顿/白屏）
     private var fileIndex: [String: URL] = [:]
     private var indexBuilt = false
+    /// 已处理的请求数 / 监听端口（供加载诊断）
+    private(set) var requestCount = 0
+    private(set) var port: UInt16 = 0
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -33,7 +36,10 @@ final class LocalHTTPServer {
                 switch state {
                 case .ready:
                     self?.listener = l
-                    if let p = l.port { onReady(p.rawValue) }
+                    if let p = l.port {
+                        self?.port = p.rawValue
+                        onReady(p.rawValue)
+                    }
                 case .failed, .cancelled:
                     self?.listener = nil
                     onFailure()
@@ -84,7 +90,12 @@ final class LocalHTTPServer {
         let lines = head.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else { conn.cancel(); return }
         let parts = requestLine.split(separator: " ").map(String.init)
-        guard parts.count >= 2, parts[0] == "GET" else { conn.cancel(); return }
+        guard parts.count >= 2 else { conn.cancel(); return }
+        requestCount += 1
+        guard parts[0] == "GET" else {
+            send(conn, status: 405, mime: "text/plain", body: Data("Method Not Allowed".utf8))
+            return
+        }
         var path = parts[1]
         if let qi = path.firstIndex(of: "?") { path = String(path[..<qi]) }
         // 日文/中文/带空格文件名：浏览器会百分号编码，这里解码还原
@@ -234,6 +245,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private var webView: WKWebView!
     private let defaults = UserDefaults.standard
     private var loadingView: UIView?
+    private var loadingDeadline: DispatchWorkItem?
+    private var currentTarget: (index: URL, readRoot: URL)?
     private var pageLoaded = false
 
     init(gameDir: URL) {
@@ -526,6 +539,15 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             present(alert, animated: true)
             return
         }
+        currentTarget = target
+        // 加载超时防护：45 秒未完成（didFinish 未到）自动收起浮层并记录，避免"一直加载"
+        loadingDeadline?.cancel()
+        let deadline = DispatchWorkItem { [weak self] in
+            CrashReporter.log("loading timeout: didFinish not received within 45s")
+            self?.hideLoading()
+        }
+        loadingDeadline = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: deadline)
         // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
         GameDetector.fixPluginAliases(in: target.readRoot)
         httpServer?.stop()
@@ -535,6 +557,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         server.start(onReady: { [weak self] port in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                // 服务器就绪 30 秒无任何请求 → 记录（WKWebView 未发出请求 / 不可达）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) {
+                    if let srv = self.httpServer, srv.requestCount == 0 {
+                        CrashReporter.log("server ready but no request in 30s (port \(srv.port))")
+                    }
+                }
                 let rootPath = target.readRoot.standardizedFileURL.path
                 var rel = target.index.standardizedFileURL.path
                 if rel.hasPrefix(rootPath) { rel = String(rel.dropFirst(rootPath.count)) }
@@ -562,10 +590,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         pageLoaded = true
         hideLoading()
+        loadingDeadline?.cancel()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         print("nav error:", error.localizedDescription)
+        loadingDeadline?.cancel()
         showLoading("加载出错：\(error.localizedDescription)\n点左上角刷新重试")
     }
 
@@ -574,9 +604,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         CrashReporter.log("GameViewController provisional error: (error.localizedDescription)")
         let desc = error.localizedDescription.lowercased()
         if desc.contains("could not connect") || desc.contains("network connection") {
+            CrashReporter.log("local network blocked, falling back to file://")
+            if let t = currentTarget {
+                let rootStr = t.readRoot.path.hasSuffix("/") ? t.readRoot.path : t.readRoot.path + "/"
+                webView.loadFileURL(t.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
+            }
             let alert = UIAlertController(
-                title: "无法连接本地服务器",
-                message: "本机回环加载被系统拦截。请到 设置 → 隐私与安全性 → 本地网络 允许本 App，然后点左上角刷新重试。",
+                title: "本地网络被拦截，已切换兼容模式",
+                message: "游戏已改用 file:// 模式加载（可能影响本地数据读取）。如仍无法运行，请到 设置 → 隐私与安全性 → 本地网络 允许本 App 后刷新重试。",
                 preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .default))
             present(alert, animated: true)

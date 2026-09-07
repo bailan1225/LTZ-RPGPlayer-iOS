@@ -21,8 +21,7 @@ enum CrashReporter {
     }
 
     private static func writeSignal(_ sig: Int32) {
-        let msg = "[SIGNAL \(sig) \(Date())] app crashed\n"
-        try? msg.write(to: logURL, atomically: true, encoding: .utf8)
+        log("SIGNAL \(sig) app crashed")
     }
 
     /// 追加一行诊断日志（供列表页「日志」按钮查看/分享）
