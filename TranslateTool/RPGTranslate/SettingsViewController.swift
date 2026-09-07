@@ -17,6 +17,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "翻译设置"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "保存", style: .done, target: self, action: #selector(saveTapped))
         tableView = UITableView(frame: .zero, style: .insetGrouped)
 
         engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API", "Agnes", "AQUA"])
@@ -51,6 +53,17 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     @objc private func engineChanged() {
         defaults.set(engineControl.selectedSegmentIndex, forKey: "tr_engine")
+        tableView.reloadData()
+    }
+
+    @objc private func saveTapped() {
+        saveAllFields()
+        let alert = UIAlertController(
+            title: "已保存",
+            message: "设置已保存（引擎：\(engineControl?.titleForSegment(at: engineControl.selectedSegmentIndex) ?? "")）。回到游戏列表重新翻译即可生效。",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
     }
 
     @objc private func enabledChanged() {
@@ -104,7 +117,14 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         switch section {
         case 0: return "翻译引擎"
         case 1: return "语言"
-        case 2: return "API 设置（自定义API / Agnes 引擎）"
+        case 2:
+            switch engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine") {
+            case 0: return "API 设置（当前：离线词典，无需填写）"
+            case 1: return "API 设置（当前：MyMemory，无需填写）"
+            case 3: return "API 设置（当前：Agnes，只需填 API Key）"
+            case 4: return "API 设置（当前：AQUA，只需填 API Key）"
+            default: return "API 设置（当前：自定义API）"
+            }
         case 3: return ""
         default: return nil
         }

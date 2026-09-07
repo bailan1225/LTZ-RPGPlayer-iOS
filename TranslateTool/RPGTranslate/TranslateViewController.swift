@@ -79,7 +79,7 @@ final class TranslateViewController: UITableViewController {
         isRunning = true
         cancelFlag = false
         _ = DataTranslator.backupData(game)
-        phaseLabel.text = "准备中…"
+        phaseLabel.text = "使用 \(engineName(cfg.engine)) 准备中…"
         progressView.progress = 0
         tableView.reloadData()
 
@@ -115,6 +115,16 @@ final class TranslateViewController: UITableViewController {
                     }
                 }
             })
+        }
+    }
+
+    private func engineName(_ e: TranslationEngine) -> String {
+        switch e {
+        case .offline: return "离线词典"
+        case .mymemory: return "MyMemory"
+        case .custom: return "自定义API"
+        case .agnes: return "Agnes"
+        case .aqua: return "AQUA"
         }
     }
 
