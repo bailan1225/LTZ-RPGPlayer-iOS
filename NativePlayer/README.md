@@ -106,6 +106,8 @@ App 第二个 Tab「翻译设置」——**纯词典模式**：只保留总开�
 
 - **白屏 / 黑屏**：确认放入的是含 `index.html` 或 `www` 的那一层文件夹；游戏页已强制横屏（MV/MZ 游戏按 816×624 横屏设计，插件窗口在竖屏下会错位重叠，横屏即正常）。
 - **游戏加载方式**：App 内自带本地 HTTP 服务器，游戏以 `http://127.0.0.1` 加载——XHR、相对路径、存档（localStorage）全部按标准浏览器行为工作，不会再报 "Failed to load: data/xxx.json"。
+- **首次打开游戏会弹「允许本地网络」**：请点允许（用于本机 127.0.0.1 回环加载游戏，不访问局域网设备）；误点拒绝后可在 系统设置 → 隐私 → 本地网络 里重新打开。
+- **初始目录**：App 首次启动自动创建 `translations/` 文件夹和「使用说明.txt」（文件App → 我的 iPhone → RPG Player 可见），爱思助手拖文件时可以直接看到结构。
 - **多语言插件名**：游戏 `js/plugins/` 下的插件文件如果是日文/中文名或带语言后缀（如 `YEP_CoreEngine_zh.js`、`YEP_CoreEngine_ja.js`），启动时会自动与 `plugins.js` 引用的名字模糊匹配并建立别名，无需手动改名，加载不再报 "Failed to load: js/plugins/xxx.js"。
 - **存档位置**：与浏览器相同，保存在 WKWebView 的 localStorage/IndexedDB，卸载 App 或换 Bundle ID 会丢。
 - **游戏内要联网的资源**：App 已允许任意 HTTP(S) 加载，游戏内联网素材一般可直接使用。

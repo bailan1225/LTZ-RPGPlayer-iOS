@@ -71,11 +71,10 @@ final class LocalHTTPServer {
     }
 
     private func respond(_ conn: NWConnection, head: String) {
-        defer { conn.cancel() }   // 单请求后关闭，简单可靠
         let lines = head.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else { return }
+        guard let requestLine = lines.first else { conn.cancel(); return }
         let parts = requestLine.split(separator: " ").map(String.init)
-        guard parts.count >= 2, parts[0] == "GET" else { return }
+        guard parts.count >= 2, parts[0] == "GET" else { conn.cancel(); return }
         var path = parts[1]
         if let qi = path.firstIndex(of: "?") { path = String(path[..<qi]) }
         let decoded = path.removingPercentEncoding ?? path
@@ -83,7 +82,7 @@ final class LocalHTTPServer {
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
         // 目录穿越防护：只允许 root 范围内
         let rootPath = root.path
-        guard fileURL.path == rootPath || fileURL.path.hasPrefix(rootPath + "/") else { return }
+        guard fileURL.path == rootPath || fileURL.path.hasPrefix(rootPath + "/") else { conn.cancel(); return }
 
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDir) else {
@@ -117,6 +116,7 @@ final class LocalHTTPServer {
         head += "\r\n"
         var payload = Data(head.utf8)
         payload.append(body)
+        // 数据发送完成后再断开，避免响应被截断导致白屏
         conn.send(content: payload, completion: .contentProcessed { _ in conn.cancel() })
     }
 
