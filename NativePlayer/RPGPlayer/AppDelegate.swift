@@ -20,7 +20,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         gamesVC.tabBarItem = UITabBarItem(title: "游戏", image: UIImage(systemName: "gamecontroller"), selectedImage: nil)
 
         let settingsVC = SettingsViewController()
-        settingsVC.tabBarItem = UITabBarItem(title: "翻译设置", image: UIImage(systemName: "character.bubble"), selectedImage: nil)
+        settingsVC.tabBarItem = UITabBarItem(title: "词典设置", image: UIImage(systemName: "character.bubble"), selectedImage: nil)
 
         let tab = UITabBarController()
         tab.viewControllers = [

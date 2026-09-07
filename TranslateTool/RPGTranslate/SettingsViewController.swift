@@ -87,7 +87,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     // MARK: - Table
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 4 }
+    override func numberOfSections(in tableView: UITableView) -> Int { 5 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
@@ -95,6 +95,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 1: return 2
         case 2: return 4
         case 3: return 2
+        case 4: return 0
         default: return 0
         }
     }
@@ -114,6 +115,9 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 0:
             return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON（含 model、messages、提示词），Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等，返回 choices[0].message.content。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
+        case 4:
+            let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+            return "RPG 翻译器 v\(ver)（iOS 版 mtool）：批量翻译 / 校对 / 导出 / 内置播放 / 作弊 / 存档管理。翻译完的游戏可在「游戏」页播放或导出，映射自动存 translations/，供「RPG Player」离线使用。"
         default: return nil
         }
     }
