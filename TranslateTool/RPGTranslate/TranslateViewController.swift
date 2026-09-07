@@ -102,6 +102,14 @@ final class TranslateViewController: UITableViewController {
                         : "完成：翻译 \(sum.translatedUnique) 条，写回 \(sum.refsChanged) 处 / \(sum.filesChanged) 个文件"
                     self.progressView.progress = 1
                     self.tableView.reloadData()
+                    if sum.failedUnique > 0 && sum.failedUnique > sum.translatedUnique {
+                        let alert = UIAlertController(
+                            title: "翻译失败较多（\(sum.failedUnique) 条）",
+                            message: "可能原因：\n① 引擎 Key 未填或无效\n② 自定义 API 地址未以 /chat/completions 结尾\n③ 免费额度用尽\n④ 模型名不支持（Agnes 默认 agnes-2.5-flash，可在设置覆盖）\n\n检查设置后重新翻译；已成功的条目不会重复翻译。",
+                            preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "好", style: .default))
+                        self.present(alert, animated: true)
+                    }
                 }
             })
         }

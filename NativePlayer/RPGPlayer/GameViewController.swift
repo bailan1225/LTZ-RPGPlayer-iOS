@@ -23,7 +23,7 @@ final class LocalHTTPServer {
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            params.requiredInterfaceType = .loopback
+            // 不限定 loopback 接口：iOS17 上 loopback-only 监听可能只绑 IPv6，导致 127.0.0.1 连不上
             let l = try NWListener(using: params, on: .any)
             l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
             l.stateUpdateHandler = { [weak self] state in
