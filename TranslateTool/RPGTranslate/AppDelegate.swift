@@ -27,16 +27,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let gamesVC = GameListViewController()
         gamesVC.tabBarItem = UITabBarItem(title: "游戏", image: UIImage(systemName: "gamecontroller"), selectedImage: nil)
 
-        let translateVC = TranslateHubViewController()
-        translateVC.tabBarItem = UITabBarItem(title: "翻译", image: UIImage(systemName: "character.bubble"), selectedImage: nil)
-
         let settingsVC = SettingsViewController()
         settingsVC.tabBarItem = UITabBarItem(title: "设置", image: UIImage(systemName: "gearshape"), selectedImage: nil)
 
         let tab = UITabBarController()
         tab.viewControllers = [
             UINavigationController(rootViewController: gamesVC),
-            UINavigationController(rootViewController: translateVC),
             UINavigationController(rootViewController: settingsVC)
         ]
 
@@ -61,25 +57,22 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             let text = """
             【RPG 翻译器 使用说明】
 
-            本 App 一个包集成两件事：游戏（播放器）+ 翻译（iOS 版 mtool），
-            游戏、词典、翻译、存档全部共用本 App 的文稿目录，无需导出转移。
+            单页工作流：导入游戏 → 选中 → 翻译成中文 → 导出 zip 交给第三方 Player 运行。
 
-            Tab 1 游戏：放游戏 → 点游戏 → 「▶ 播放」直接开玩（横屏、词典自动命中、作弊器）；
-            Tab 2 翻译：点游戏 → 批量翻译 / 校对 / 导出，翻译结果自动存 translations/游戏名.json，
-                       翻译完回到「游戏」Tab 播放即是中文。
-            Tab 3 设置：翻译引擎（默认「离线词典」，零网络；批量翻译时再选 Agnes / AQUA / 自定义 API），
-                       翻译语言锁定中文，可测试连接、可保存。
+            页面：
+            · 游戏页：上面是游戏列表（点选切换），下方是对应游戏的翻译操作：
+              开始翻译（进度条）/ 校对译文 / 应用翻译文件（mtool/JSON）/
+              导出翻译后的游戏（zip，供第三方 Player）/ 恢复原版。
+            · 设置页：翻译引擎（默认「离线词典」零网络；批量翻译选 Agnes / AQUA / 自定义 API），
+              翻译语言锁定中文，可测试连接、可保存。
 
-            1. 放游戏：把含 www/data（或 data）的游戏文件夹，用爱思助手直接拖进本 App 的 Documents 文件夹
-               （或 文件App → 我的 iPhone → RPG 翻译器），然后回 App 点「刷新列表」。
-               目录名含 [ ] 空格等字符也能自动处理。
+            1. 放游戏：把含 www/data（或 data）的游戏文件夹，用爱思助手/文件App
+               放进本 App 的 Documents 文件夹；zip 压缩包放入后回 App 会自动提示解压导入。
 
-            2. 自定义 API：设置页选「自定义API」，API 地址填 https://…/chat/completions，
-               Key 自填，模型填 glm-4-flash / agnes-2.5-flash / deepseek-chat 等，
-               支持 DeepSeek/通义/OpenAI 兼容接口。
+            2. 翻译：选中游戏 →「开始翻译」（需先在设置页配置翻译引擎）。
 
-            3. 首次打开游戏若弹出「允许本地网络」请点允许（用于本机 127.0.0.1 加载游戏，
-               不会访问局域网设备）。
+            3. 游玩：翻译完 →「导出翻译后的游戏（zip）」→ 文件App → 共享 →
+               用 RPG Pocket / QuestPlay / RPGEmu（App Store 免费下载）打开即可玩中文版。
             """
             try? text.write(to: guide, atomically: true, encoding: .utf8)
         }
