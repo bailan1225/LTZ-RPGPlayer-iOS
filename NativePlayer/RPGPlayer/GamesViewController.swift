@@ -223,6 +223,99 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
         navigationController?.pushViewController(vc, animated: true)
     }
 
+    override func tableView(_ tableView: UITableView,
+                            trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard !games.isEmpty else { return nil }
+        let url = games[indexPath.row]
+        let translate = UIContextualAction(style: .normal, title: "翻译") { [weak self] _, _, done in
+            self?.translateGame(url)
+            done(true)
+        }
+        translate.backgroundColor = .systemBlue
+        let delete = UIContextualAction(style: .destructive, title: "删除") { [weak self] _, _, done in
+            self?.confirmDelete(url)
+            done(true)
+        }
+        return UISwipeActionsConfiguration(actions: [delete, translate])
+    }
+
+    /// 批量翻译选中游戏：整游戏 data 文本跑引擎，结果写 translations/<游戏名>.json + 写回游戏
+    private func translateGame(_ url: URL) {
+        guard let game = DataTranslator.info(forGameRoot: url) else {
+            alert("无法识别", "该目录下没有找到 data/System.json。")
+            return
+        }
+        let config = TranslationConfig.loadFromDefaults()
+        if config.engine == .offline {
+            // 离线：只应用已保存的翻译映射（translations/<游戏名>.json → 写回游戏 data）
+            let map = DataTranslator.savedMapping(for: game)
+            if map.isEmpty {
+                alert("离线模式", "请先在「设置」中选择在线翻译引擎；或放入 translations/<游戏名>.json 后重试。")
+                return
+            }
+            let r = DataTranslator.applyMapping(map, to: game)
+            refreshGames()
+            alert("已应用翻译", "写回 \(r.refs) 处（\(r.files) 个文件）。")
+            return
+        }
+        let progressAlert = UIAlertController(title: "正在翻译…", message: "准备中", preferredStyle: .alert)
+        progressAlert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(progressAlert, animated: true)
+        var cancelled = false
+        DataTranslator.run(game: game, config: config,
+                           progress: { p in
+            progressAlert.message = "\(p.phase)（\(p.done)/\(p.total)）"
+        }, cancelled: { cancelled },
+                           completion: { [weak self] summary in
+            progressAlert.dismiss(animated: true)
+            guard let self = self else { return }
+            self.refreshGames()
+            if summary.refsChanged > 0 || summary.translatedUnique > 0 {
+                self.alert("翻译完成",
+                           "新翻译 \(summary.translatedUnique) 条，写回 \(summary.refsChanged) 处。\n进入游戏自动离线命中，可左滑再次翻译增量补翻。")
+            } else if summary.failedUnique > 0 {
+                self.alert("部分失败", "有 \(summary.failedUnique) 条未翻译。\n原因：\(summary.lastError)")
+            } else {
+                self.alert("无新内容", "没有可翻译的新文本（或全部已缓存）。")
+            }
+        })
+    }
+
+    private func confirmDelete(_ url: URL) {
+        let name = displayName(for: url)
+        let alert = UIAlertController(title: "删除「\(name)」？",
+                                      message: "将删除游戏文件、对应备份目录与 translations/<目录名>.json 词典。此操作不可恢复。",
+                                      preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "删除", style: .destructive) { [weak self] _ in
+            self?.deleteGame(url)
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func deleteGame(_ url: URL) {
+        let fm = FileManager.default
+        let docs = Self.documents
+        let key = url.lastPathComponent
+        // 游戏目录
+        try? fm.removeItem(at: url)
+        // 对应备份目录（Backups/<目录名>）
+        let backup = docs.appendingPathComponent("Backups", isDirectory: true)
+            .appendingPathComponent(key, isDirectory: true)
+        try? fm.removeItem(at: backup)
+        // 翻译词典（translations/<目录名>.json）
+        let mapFile = Self.translationsDir.appendingPathComponent(key + ".json")
+        try? fm.removeItem(at: mapFile)
+        translationCounts.removeValue(forKey: key)
+        refreshGames()
+    }
+
+    private func alert(_ title: String, _ message: String) {
+        let a = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
+    }
+
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         "导入游戏：右上角 + 可直接导入 zip；或文件App / 爱思助手把游戏文件夹放入本 App 的 Documents（含 index.html 或 www 均可，自动识别）。\n\n游戏运行页为横屏。"
     }

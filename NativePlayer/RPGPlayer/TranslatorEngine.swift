@@ -1,0 +1,450 @@
+import Foundation
+
+/// 翻译引擎配置（与播放器 App 的 key 保持一致，方便用户习惯复用）
+enum TranslationEngine: Int {
+    case offline = 0
+    case mymemory = 1
+    case custom = 2
+    case agnes = 3
+    case aqua = 4
+}
+
+struct TranslationConfig {
+    var engine: TranslationEngine = .offline
+    var source = "ja"
+    var target = "zh-CN"
+    var apiUrl = ""
+    var apiKey = ""
+    var prompt = ""    // 自定义 API 翻译风格提示词（AiNiee 思路），用 {prompt} 占位符附加
+    var model = ""     // 自定义 API 模型名（OpenAI 兼容接口），用 {model} 占位符或 POST body.model
+    var memEmail = ""  // MyMemory 注册邮箱：免费额度从 ~5000 字符/天提升到 ~50000 字符/天
+}
+
+/// 批量翻译引擎：内置离线词典 + MyMemory 在线接口 + 自定义 API
+/// 所有翻译结果增量缓存到 Documents/transCache/<target>.json，断点续翻
+final class TranslatorEngine {
+
+    let config: TranslationConfig
+
+    private var dict: [String: String] = [:]
+    private var cache: [String: String] = [:]
+    private let cacheURL: URL
+    private let session: URLSession
+    private let maxTextLength = 450   // MyMemory 单条上限约 500 字符，留余量
+
+    private let stateLock = NSLock()
+
+    /// 最近一次 API 错误的中文描述（AQUA/Agnes/OpenAI 兼容 error.message），供界面诊断（并发安全）
+    private var _lastError = ""
+    var lastError: String {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _lastError }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _lastError = newValue }
+    }
+
+    init(config: TranslationConfig) {
+        self.config = config
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let cacheDir = docs.appendingPathComponent("transCache", isDirectory: true)
+        try? fm.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        cacheURL = cacheDir.appendingPathComponent("\(config.target).json")
+        let s = URLSessionConfiguration.ephemeral
+        s.timeoutIntervalForRequest = 20
+        s.timeoutIntervalForResource = 40
+        session = URLSession(configuration: s)
+        loadDict()
+        loadCache()
+    }
+
+    // MARK: - 词典
+
+    /// 动态并入术语表/词典（两阶段翻译：术语结果并入后，对话自动命中）
+    func mergeDict(_ m: [String: String]) {
+        for (k, v) in m where !k.isEmpty && !v.isEmpty { dict[k] = v }
+    }
+
+    private func loadDict() {
+        let fm = FileManager.default
+        // 内置词典
+        if let url = Bundle.main.url(forResource: "dict", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            for (k, v) in obj { dict[k] = v }
+        }
+        // 用户自定义词典（Documents/dict.json 覆盖内置）
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let userDict = docs.appendingPathComponent("dict.json")
+        if fm.fileExists(atPath: userDict.path),
+           let data = try? Data(contentsOf: userDict),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            for (k, v) in obj { dict[k] = v }
+        }
+    }
+
+    // MARK: - 缓存
+
+    private func loadCache() {
+        if let data = try? Data(contentsOf: cacheURL),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+            cache = obj
+        }
+    }
+
+    func saveCache() {
+        stateLock.lock()
+        let snapshot = cache
+        stateLock.unlock()
+        guard let data = try? JSONSerialization.data(withJSONObject: snapshot) else { return }
+        try? data.write(to: cacheURL, options: .atomic)
+    }
+
+    // MARK: - 主入口（回调必定在主线程或调用线程；nil = 翻译失败/无结果，调用方保留原文）
+
+    func translate(_ raw: String, completion: @escaping (String?) -> Void) {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { completion(nil); return }
+
+        // 缓存命中（并发下加锁读）
+        stateLock.lock()
+        let hit = cache[text]
+        stateLock.unlock()
+        if let hit = hit {
+            completion(hit.isEmpty ? nil : hit)
+            return
+        }
+        // 词典命中（dict 只读，并发安全）
+        if let d = dict[text] {
+            stateLock.lock(); cache[text] = d; stateLock.unlock()
+            completion(d)
+            return
+        }
+        if config.engine == .offline {
+            completion(nil)
+            return
+        }
+
+        let target = config.target
+        let source = config.source
+
+        func finish(_ result: String?) {
+            // 只缓存成功结果；失败项下次运行会重试（换 Key / 网络恢复后有效）
+            if let r = result, !r.isEmpty, r != text {
+                stateLock.lock(); cache[text] = r; stateLock.unlock()
+                completion(r)
+            } else {
+                completion(nil)
+            }
+        }
+
+        switch config.engine {
+        case .mymemory:
+            var comps = URLComponents(string: "https://api.mymemory.translated.net/get")!
+            var items = [
+                URLQueryItem(name: "q", value: String(text.prefix(maxTextLength))),
+                URLQueryItem(name: "langpair", value: "\(source)|\(target)")
+            ]
+            if !config.memEmail.isEmpty { items.append(URLQueryItem(name: "de", value: config.memEmail)) }
+            comps.queryItems = items
+            request(comps.url, parse: { data in
+                guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let rd = obj["responseData"] as? [String: Any],
+                      let t = rd["translatedText"] as? String else { return nil }
+                return t
+            }, completion: finish)
+        case .custom:
+            guard !config.apiUrl.isEmpty else { completion(nil); return }
+            let capped = String(text.prefix(maxTextLength))
+            // 模式A：URL 含 {text} 占位符 → 直接替换占位符（兼容老用户模板）
+            if config.apiUrl.contains("{text}") {
+                var urlStr = config.apiUrl
+                    .replacingOccurrences(of: "{text}", with: percentEncode(capped))
+                    .replacingOccurrences(of: "{key}", with: percentEncode(config.apiKey))
+                    .replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
+                    .replacingOccurrences(of: "{model}", with: percentEncode(config.model))
+                if urlStr.contains("{text}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{text}", with: percentEncode(capped))
+                }
+                if urlStr.contains("{prompt}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{prompt}", with: percentEncode(config.prompt))
+                }
+                if urlStr.contains("{model}") {
+                    urlStr = urlStr.replacingOccurrences(of: "{model}", with: percentEncode(config.model))
+                }
+                request(URL(string: urlStr), parse: { [weak self] data in self?.parseCustom(data) }, completion: finish)
+                return
+            }
+            // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
+            var body: [String: Any] = [
+                "messages": [
+                    ["role": "system", "content": buildSystemPrompt()],
+                    ["role": "user", "content": capped]
+                ],
+                "temperature": 0.3
+            ]
+            if !config.model.isEmpty { body["model"] = config.model }
+            // 自动补全：用户常填 base（如 https://api.ltzy.top/v1），缺 /chat/completions 会 404
+            var endpoint = config.apiUrl
+            if !endpoint.contains("/chat/completions") {
+                endpoint += (endpoint.hasSuffix("/") ? "" : "/") + "chat/completions"
+            }
+            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+                  let url = URL(string: endpoint) else { completion(nil); return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            if !config.apiKey.isEmpty {
+                req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+            }
+            req.httpBody = bodyData
+            session.dataTask(with: req) { [weak self] data, _, _ in
+                guard let data = data else { completion(nil); return }
+                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
+        case .agnes:
+            // Agnes 2.5 Flash：官方 OpenAI 兼容接口（https://apihub.agnes-ai.com/v1/chat/completions）
+            let agnesURL = "https://apihub.agnes-ai.com/v1/chat/completions"
+            let agnesModel = config.model.isEmpty ? "agnes-2.5-flash" : config.model
+            var body: [String: Any] = [
+                "model": agnesModel,
+                "messages": [
+                    ["role": "system", "content": buildSystemPrompt()],
+                    ["role": "user", "content": String(text.prefix(maxTextLength))]
+                ],
+                "temperature": 0.3,
+                "max_tokens": 4096
+            ]
+            guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
+                  let url = URL(string: agnesURL) else { completion(nil); return }
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+            req.httpBody = bodyData
+            session.dataTask(with: req) { [weak self] data, _, err in
+                guard let data = data else {
+                    self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    completion(nil)
+                    return
+                }
+                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
+        case .aqua:
+            // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（免费、不调用模型），
+            // 解析失败自动回退对话模型（免费 glm-4-flash，官方网页翻译同款端点，保证出译文）
+            let capped = String(text.prefix(maxTextLength))
+            let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
+            guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
+                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
+                self.aquaChatFallback(text: capped, completion: completion)
+                return
+            }
+            var toolReq = URLRequest(url: toolURL)
+            toolReq.httpMethod = "POST"
+            toolReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            toolReq.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+            toolReq.httpBody = toolData
+            session.dataTask(with: toolReq) { [weak self] data, _, err in
+                guard let data = data, let self = self else {
+                    self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    self?.aquaChatFallback(text: capped, completion: completion)
+                    return
+                }
+                guard let r = self.parseToolTranslate(data, original: capped) else {
+                    self.aquaChatFallback(text: capped, completion: completion)
+                    return
+                }
+                completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
+            }.resume()
+        case .offline:
+            completion(nil)
+        }
+    }
+
+    /// 构造 system 提示词：始终强制锁定目标语言（避免免费模型自由发挥输出英文）
+    private func buildSystemPrompt() -> String {
+        let target = config.target.isEmpty ? "zh-CN" : config.target
+        let langLine = "Translate into \(target). Output ONLY the translated text, nothing else."
+        if config.prompt.isEmpty {
+            return "You are a game translator. Keep the tone, style and proper nouns. " + langLine
+        }
+        return config.prompt + " " + langLine
+    }
+
+    /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种格式 + 递归兜底提取译文 + 失败诊断）
+    private func parseToolTranslate(_ data: Data, original: String) -> String? {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            for k in ["translation", "translatedText", "translated_text", "text", "result", "output", "dst", "content", "message"] {
+                if let v = obj[k] as? String, !v.isEmpty, v != original { return v }
+            }
+            if let v = obj["data"] as? String, !v.isEmpty, v != original { return v }
+            if let d = obj["data"] as? [String: Any] {
+                for k in ["text", "translation", "translatedText", "translated_text", "output", "result", "dst"] {
+                    if let v = d[k] as? String, !v.isEmpty, v != original { return v }
+                }
+                if let arr = d["translations"] as? [[String: Any]] {
+                    for x in arr {
+                        if let t = x["translatedText"] as? String, !t.isEmpty { return t }
+                        if let t = x["text"] as? String, !t.isEmpty, t != original { return t }
+                    }
+                }
+                if let arr = d["translations"] as? [String], let t = arr.first, !t.isEmpty, t != original { return t }
+            }
+            if let choices = obj["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let msg = first["message"] as? [String: Any],
+               let c = msg["content"] as? String, !c.isEmpty { return c }
+            if let e = obj["error"] as? [String: Any] {
+                let m = (e["message"] as? String) ?? "未知错误"
+                lastError = m
+                print("API error:", m)
+                return nil
+            }
+            // 递归兜底：排除原文回显与元数据后，取最像译文的长字符串
+            var best: String?
+            var bestScore = 0
+            collectTranslationCandidates(obj, original: original, into: &best, score: &bestScore)
+            if let b = best { return b }
+            // 诊断：响应格式未识别，把原文存进 lastError 供设置页「测试翻译连接」展示
+            let raw = String(data: data, encoding: .utf8) ?? ""
+            lastError = "响应格式未识别：\(String(raw.prefix(200)))"
+            print("AQUA raw:", raw.prefix(200))
+            return nil
+        }
+        let t = String(data: data, encoding: .utf8) ?? ""
+        if !t.isEmpty, t != original { return t }
+        lastError = "空响应"
+        return nil
+    }
+
+    /// 递归收集"像译文"的字符串：跳过元数据键，排除原文回显/URL/纯数字，取最长
+    private func collectTranslationCandidates(_ any: Any, original: String,
+                                              into best: inout String?, score: inout Int) {
+        if let s = any as? String {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard t.count >= 2, t != original, !t.contains("://"),
+                  !t.contains("{"), !t.contains("[") else { return }
+            if t.count > score { score = t.count; best = t }
+            return
+        }
+        if let d = any as? [String: Any] {
+            let skipKeys: Set<String> = ["error", "message", "code", "status", "type", "id",
+                                         "model", "object", "created", "usage", "role",
+                                         "finish_reason", "help", "hint", "version", "url"]
+            for (k, v) in d where !skipKeys.contains(k) {
+                collectTranslationCandidates(v, original: original, into: &best, score: &score)
+            }
+            return
+        }
+        if let a = any as? [Any] {
+            for v in a { collectTranslationCandidates(v, original: original, into: &best, score: &score) }
+        }
+    }
+
+
+    /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + glm-4-flash）
+    private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
+        let model = config.model.isEmpty ? "glm-4-flash-250414" : config.model
+        var body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": buildSystemPrompt()],
+                ["role": "user", "content": text]
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4096
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = bodyData
+        session.dataTask(with: req) { [weak self] data, _, err in
+            guard let data = data, let self = self else {
+                self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                completion(nil)
+                return
+            }
+            completion(self.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+        }.resume()
+    }
+
+    /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
+    private func aquaLang(_ t: String) -> String {
+        // 空值一律按中文处理（用户以中文为目标语言），绝不回退英文
+        let low = t.isEmpty ? "zh-cn" : t.lowercased()
+        if low.hasPrefix("zh") { return "zh" }
+        if low.hasPrefix("ja") { return "ja" }
+        if low.hasPrefix("ko") { return "ko" }
+        if low.hasPrefix("fr") { return "fr" }
+        if low.hasPrefix("de") { return "de" }
+        if low.hasPrefix("ru") { return "ru" }
+        if low.hasPrefix("es") { return "es" }
+        return "zh"
+    }
+
+    /// 自定义 API 响应解析：OpenAI 兼容 choices[0].message.content / translatedText / translation / data.translations / 纯文本
+    private func parseCustom(_ data: Data) -> String? {
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let choices = obj["choices"] as? [[String: Any]],
+               let first = choices.first,
+               let msg = first["message"] as? [String: Any],
+               let c = msg["content"] as? String { return c }
+            if let t = obj["translatedText"] as? String { return t }
+            if let t = obj["translation"] as? String { return t }
+            if let t = obj["data"] as? [String: Any],
+               let s = t["translations"] as? [[String: Any]],
+               let x = s.first?["translatedText"] as? String { return x }
+            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String {
+                lastError = m
+                print("API error:", m)
+            }
+            return nil
+        }
+        return String(data: data, encoding: .utf8)   // 纯文本响应兜底
+    }
+
+    private func percentEncode(_ s: String) -> String {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        return s.addingPercentEncoding(withAllowedCharacters: allowed) ?? s
+    }
+
+    private func request(_ url: URL?, parse: @escaping (Data) -> String?, completion: @escaping (String?) -> Void) {
+        guard let url = url else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 RPGTranslate", forHTTPHeaderField: "User-Agent")
+        session.dataTask(with: req) { data, _, _ in
+            guard let data = data else { completion(nil); return }
+            let result = parse(data)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            completion(result)
+        }.resume()
+    }
+
+    /// 当前缓存中的翻译条数（供界面展示）
+    var cachedCount: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return cache.count
+    }
+}
+
+
+// MARK: - 从 UserDefaults 读取翻译配置（与翻译器 key 完全一致，设置页共用）
+
+extension TranslationConfig {
+    static func loadFromDefaults(_ defaults: UserDefaults = .standard) -> TranslationConfig {
+        let engines = [TranslationEngine.offline, .mymemory, .custom, .agnes, .aqua]
+        let idx = defaults.integer(forKey: "tr_engine")
+        return TranslationConfig(
+            engine: engines.indices.contains(idx) ? engines[idx] : .offline,
+            source: defaults.string(forKey: "tr_source") ?? "ja",
+            target: defaults.string(forKey: "tr_target") ?? "zh-CN",
+            apiUrl: defaults.string(forKey: "tr_api_url") ?? "",
+            apiKey: defaults.string(forKey: "tr_api_key") ?? "",
+            prompt: defaults.string(forKey: "tr_prompt") ?? "",
+            model: defaults.string(forKey: "tr_model") ?? "",
+            memEmail: defaults.string(forKey: "tr_mem_email") ?? "")
+    }
+}
