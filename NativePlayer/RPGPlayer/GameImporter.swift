@@ -26,11 +26,11 @@ enum GameImporter {
             }
         }
 
-        // 2) 注入游戏居中 CSS（如果没有）
+        // 2) 注入游戏全屏 CSS（如果没有）
         if !html.contains("rpg-player-center-css") {
             let css = """
             <style id="rpg-player-center-css">
-            html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;}
+            html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}
             canvas{display:block;}
             </style>
             """

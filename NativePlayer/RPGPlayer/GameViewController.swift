@@ -377,14 +377,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         let config = WKWebViewConfiguration()
         let contentController = WKUserContentController()
 
-        // 0) 注入游戏画面居中 CSS（修复横屏时 canvas 偏移/消失）
+        // 0) 注入游戏全屏 CSS（修复横屏时 canvas 偏移/坐标错位）
         contentController.addUserScript(WKUserScript(
             source: """
             (function () {
               var s = document.createElement('style');
               s.textContent = 'html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}' +
-                'canvas{display:block;margin:0 auto;}' +
-                '#ggs-page,#gameCanvas,#GameCanvas{width:100%!important;height:100%!important;}';
+                'canvas{display:block;}';
               (document.head || document.documentElement).appendChild(s);
             })();
             """,
@@ -627,6 +626,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         webView.scrollView.delaysContentTouches = false
         webView.scrollView.canCancelContentTouches = true
         webView.scrollView.keyboardDismissMode = .interactive
+        // 禁用安全区域插入，否则触摸坐标会偏移
+        if #available(iOS 11.0, *) {
+            webView.scrollView.contentInsetAdjustmentBehavior = .never
+        }
         view.addSubview(webView)
         webView.translatesAutoresizingMaskIntoConstraints = false
         // 全屏沉浸：用 view 边缘而非 safeArea，横屏时画面更大（不缩进刘海凹口）
