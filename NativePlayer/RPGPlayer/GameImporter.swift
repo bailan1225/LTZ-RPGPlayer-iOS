@@ -32,7 +32,6 @@ enum GameImporter {
             <style id="rpg-player-center-css">
             html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;}
             canvas{display:block;}
-            #GameCanvas,#ggs-page,#gameCanvas{display:flex;align-items:center;justify-content:center;width:100%;height:100%;}
             </style>
             """
             if let range = html.range(of: "</head>") {

@@ -304,9 +304,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     init(gameDir: URL) {
         self.gameDir = gameDir
         super.init(nibName: nil, bundle: nil)
+        hidesBottomBarWhenPushed = true  // 游戏运行时隐藏底部 tab bar
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var prefersStatusBarHidden: Bool { true }  // 隐藏状态栏
 
     override func viewDidLoad() {
         super.viewDidLoad()

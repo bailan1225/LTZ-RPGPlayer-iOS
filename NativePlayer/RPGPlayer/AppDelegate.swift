@@ -56,8 +56,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
                翻译完自动写回游戏并保存 translations/游戏名.json，运行时离线命中。
                也可在「设置」页切换引擎 / 填 Key / 调并发 / 测试连接。
 
-            3. 运行游戏：点选游戏 → 「▶ 运行游戏」。支持 MV/MZ、加密游戏（自动解密）、
-               作弊器（游戏内礼物图标）、存档导入导出（外接硬盘图标）。
+            3. 运行游戏：点选游戏 → 「▶ 运行游戏」。支持 MV/MZ、加密游戏（游戏内置 Decrypter 自动解密）、
+               作弊器（游戏内悬浮球）、存档导入导出。
 
             4. 翻译文件：「游戏」页左上角「翻译文件」可管理/编辑/导出 translations/*.json。
                也支持放入 mtool 或其他工具导出的 {原文:译文} JSON。
