@@ -295,6 +295,17 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         // 否则 scheme handler 的索引里只有加密文件名，解密后的新文件名会 404
         let safeDir = SafePath.sanitize(gameDir)
         currentTarget = GameDetector.resolveLoadTarget(for: safeDir)
+        // 诊断日志：记录游戏目录结构和加载目标
+        if let target = currentTarget {
+            CrashReporter.log("game target: index=\(target.index.lastPathComponent) readRoot=\(target.readRoot.lastPathComponent)")
+        } else {
+            CrashReporter.log("game target: RESOLVE FAILED for \(safeDir.lastPathComponent)")
+        }
+        // 记录目录结构（前 20 项）
+        if let items = try? FileManager.default.contentsOfDirectory(at: safeDir, includingPropertiesForKeys: nil) {
+            let names = items.prefix(20).map { $0.lastPathComponent }.joined(separator: ", ")
+            CrashReporter.log("game dir contents: \(names)")
+        }
         if let target = currentTarget, GameDecryptor.needsDecryption(in: target.readRoot) {
             showLoading("正在解密游戏资源…")
             let r = GameDecryptor.decryptIfNeeded(in: target.readRoot)
