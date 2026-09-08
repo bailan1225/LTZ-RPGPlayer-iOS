@@ -177,6 +177,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private var currentTarget: (index: URL, readRoot: URL)?
     private var pageLoaded = false
     private var schemeHandler: GameSchemeHandler?
+    private var floatingBall: FloatingBallView?
 
     init(gameDir: URL) {
         self.gameDir = gameDir
@@ -205,7 +206,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             hideLoading()
         }
         setupWebView()
-        setupToolbar()
+        setupFloatingBall()
         loadGame()
     }
 
@@ -227,6 +228,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         webView?.stopLoading()
+        // 保存悬浮球位置
+        if let ball = floatingBall {
+            let key = "ballPos_\(SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent)"
+            defaults.set([ball.center.x, ball.center.y], forKey: key)
+        }
         navigationController?.hidesBarsOnTap = false
         navigationController?.setNavigationBarHidden(false, animated: false)
         forceOrientation(.portrait)
@@ -396,31 +402,64 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         loadingView = nil
     }
 
-    private func setupToolbar() {
-        let back = UIBarButtonItem(
-            title: "✕", style: .plain, target: self, action: #selector(backToList))
-        back.accessibilityLabel = "返回游戏列表"
-        let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
-        let save = UIBarButtonItem(
-            image: UIImage(systemName: "externaldrive"),
-            style: .plain, target: self, action: #selector(saveMenu))
-        save.accessibilityLabel = "存档导入导出"
-        let toggle = UIBarButtonItem(
-            image: UIImage(systemName: "character.bubble"),
-            style: .plain, target: self, action: #selector(toggleTranslate))
-        toggle.tintColor = defaults.bool(forKey: "tr_enabled") ? .systemBlue : .secondaryLabel
-        toggle.accessibilityLabel = "翻译开关"
-        let cheat = UIBarButtonItem(
-            image: UIImage(systemName: "gift"),
-            style: .plain, target: self, action: #selector(toggleCheat))
-        cheat.tintColor = .systemOrange
-        cheat.accessibilityLabel = "作弊器"
-        // 横屏紧凑布局：返回 + 刷新 + 存档 + 作弊 + 翻译
-        toolbarItems = [back, .flexibleSpace(), reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
-        navigationController?.setToolbarHidden(false, animated: false)
+    private func setupFloatingBall() {
+        // 隐藏底部工具栏，用悬浮球代替（完全不遮挡游戏区域）
+        navigationController?.setToolbarHidden(true, animated: false)
+
+        let ball = FloatingBallView()
+        ball.onMenu = { [weak self] in self?.showBallMenu() }
+        view.addSubview(ball)
+        floatingBall = ball
+
+        // 恢复上次位置（每游戏独立）
+        let key = "ballPos_\(SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent)"
+        if let arr = defaults.array(forKey: key) as? [CGFloat], arr.count == 2 {
+            ball.center = CGPoint(x: arr[0], y: arr[1])
+        } else {
+            // 默认右下角
+            ball.center = CGPoint(x: view.bounds.width - 40, y: view.bounds.height - 120)
+        }
+    }
+
+    private func showBallMenu() {
+        let trOn = defaults.bool(forKey: "tr_enabled")
+        let alert = UIAlertController(title: "游戏菜单", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "✕ 返回列表", style: .default) { [weak self] _ in self?.backToList() })
+        alert.addAction(UIAlertAction(title: "↻ 刷新游戏", style: .default) { [weak self] _ in self?.reload() })
+        alert.addAction(UIAlertAction(title: "💾 存档管理", style: .default) { [weak self] _ in self?.saveMenu() })
+        alert.addAction(UIAlertAction(title: "🎁 作弊器", style: .default) { [weak self] _ in self?.toggleCheat() })
+        alert.addAction(UIAlertAction(title: trOn ? "💬 翻译：开（点此关闭）" : "💬 翻译：关（点此开启）", style: .default) { [weak self] _ in
+            self?.toggleTranslate()
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        // iPad 适配
+        if let pop = alert.popoverPresentationController, let ball = floatingBall {
+            pop.sourceView = ball
+            pop.sourceRect = ball.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let ball = floatingBall else { return }
+        // 确保悬浮球在可见范围内
+        let margin: CGFloat = 6
+        let minX = margin + ball.bounds.width / 2
+        let maxX = view.bounds.width - margin - ball.bounds.width / 2
+        let minY = margin + ball.bounds.height / 2
+        let maxY = view.bounds.height - margin - ball.bounds.height / 2
+        ball.center = CGPoint(
+            x: min(max(ball.center.x, minX), maxX),
+            y: min(max(ball.center.y, minY), maxY))
     }
 
     @objc private func backToList() {
+        // 保存悬浮球位置
+        if let ball = floatingBall {
+            let key = "ballPos_\(SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent)"
+            defaults.set([ball.center.x, ball.center.y], forKey: key)
+        }
         navigationController?.popViewController(animated: true)
     }
 
@@ -608,5 +647,66 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         let alert = UIAlertController(title: "提示", message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
         present(alert, animated: true)
+    }
+}
+
+// MARK: - 悬浮球：可拖动、可缩小、点击展开菜单，完全不遮挡游戏区域
+
+class FloatingBallView: UIButton {
+    var onMenu: (() -> Void)?
+    private var isMinimized = false
+    private let normalSize: CGFloat = 46
+    private let miniSize: CGFloat = 18
+
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 46, height: 46))
+        setup()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func setup() {
+        backgroundColor = UIColor.systemOrange.withAlphaComponent(0.88)
+        setImage(UIImage(systemName: "gamecontroller.fill"), for: .normal)
+        tintColor = .white
+        layer.cornerRadius = 23
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.35
+        layer.shadowRadius = 5
+        layer.shadowOffset = CGSize(width: 0, height: 2)
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        addGestureRecognizer(pan)
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
+        doubleTap.numberOfTapsRequired = 2
+        addGestureRecognizer(doubleTap)
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        singleTap.require(toFail: doubleTap)
+        addGestureRecognizer(singleTap)
+    }
+
+    @objc private func handleTap() { onMenu?() }
+
+    @objc private func handleDoubleTap() {
+        isMinimized.toggle()
+        let size = isMinimized ? miniSize : normalSize
+        UIView.animate(withDuration: 0.2) {
+            self.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            self.layer.cornerRadius = size / 2
+            self.alpha = self.isMinimized ? 0.35 : 1.0
+        }
+    }
+
+    @objc private func handlePan(_ g: UIPanGestureRecognizer) {
+        guard let sv = superview else { return }
+        center = CGPoint(x: center.x + g.translation(in: sv).x, y: center.y + g.translation(in: sv).y)
+        g.setTranslation(.zero, in: sv)
+        if g.state == .ended {
+            let margin: CGFloat = 6
+            let tx = center.x < sv.bounds.midX ? margin + bounds.width / 2 : sv.bounds.width - margin - bounds.width / 2
+            let minY = margin + bounds.height / 2
+            let maxY = sv.bounds.height - margin - bounds.height / 2
+            let ty = min(max(center.y, minY), maxY)
+            UIView.animate(withDuration: 0.25) { self.center = CGPoint(x: tx, y: ty) }
+        }
     }
 }
