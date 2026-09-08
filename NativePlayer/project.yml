@@ -20,6 +20,12 @@ targets:
       - path: RPGPlayer
         excludes:
           - Info.plist
+          - "*.js"
+          - "*.json"
+    resources:
+      - path: RPGPlayer/Cheat.js
+      - path: RPGPlayer/Translator.js
+      - path: RPGPlayer/dict.json
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rpgplayer.ios
