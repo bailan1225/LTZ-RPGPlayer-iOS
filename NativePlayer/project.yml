@@ -21,8 +21,8 @@ targets:
         excludes:
           - Info.plist
           - Resources
-    resources:
       - path: RPGPlayer/Resources
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.rpgplayer.ios
