@@ -140,6 +140,18 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
+    /// 创建 HTTP 200 响应——关键：用 HTTPURLResponse 而非 URLResponse，
+    /// 这样 XHR.status = 200 而非 0。某些 RPG Maker 插件检查 status===200，
+    /// status=0 会被误判为加载失败，导致页面反复刷新和 The operation was aborted。
+    static func makeHTTPResponse(url: URL, mime: String, length: Int) -> HTTPURLResponse {
+        let contentType = mime.hasPrefix("text/") || mime == "application/json"
+            ? "\(mime); charset=utf-8" : mime
+        return HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+                               headerFields: ["Content-Type": contentType,
+                                              "Content-Length": "\(length)",
+                                              "Cache-Control": "no-cache"])!
+    }
+
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         let startTime = Date()
         let taskID = ObjectIdentifier(urlSchemeTask)
@@ -206,16 +218,12 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                     CrashReporter.log("scheme auto-repair corrupt: \(rel)")
                 }
                 let mime = self.mimeType(finalURL.pathExtension)
-                let response = URLResponse(url: url, mimeType: mime,
-                                           expectedContentLength: finalData.count,
-                                           textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
+                let response = Self.makeHTTPResponse(url: url, mime: mime, length: finalData.count)
                 self.succeedTask(urlSchemeTask, response: response, data: finalData)
             } else if let decrypted = self.resolveEncryptedFallback(fileURL) {
                 // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
                 let mime = self.mimeType(fileURL.pathExtension)
-                let response = URLResponse(url: url, mimeType: mime,
-                                           expectedContentLength: decrypted.count,
-                                           textEncodingName: nil)
+                let response = Self.makeHTTPResponse(url: url, mime: mime, length: decrypted.count)
                 self.succeedTask(urlSchemeTask, response: response, data: decrypted)
                 CrashReporter.log("scheme decrypt-fallback: \(rel)")
             } else {
@@ -223,9 +231,7 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 let name = fileURL.lastPathComponent.lowercased()
                 if let hit = self.fileIndex[name], let data = try? Data(contentsOf: hit) {
                     let mime = self.mimeType(hit.pathExtension)
-                    let response = URLResponse(url: url, mimeType: mime,
-                                               expectedContentLength: data.count,
-                                               textEncodingName: nil)
+                    let response = Self.makeHTTPResponse(url: url, mime: mime, length: data.count)
                     self.succeedTask(urlSchemeTask, response: response, data: data)
                     CrashReporter.log("scheme 404→index hit: \(rel) -> \(hit.lastPathComponent)")
                     return
