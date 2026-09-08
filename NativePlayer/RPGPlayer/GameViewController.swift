@@ -67,6 +67,31 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// fallback：请求 .png/.ogg/.mp4 但文件还是 .rpgmvp/.rpgmvo/.rpgmvm（预解密遗漏），
     /// 实时解密返回 Data。只在常规 resolve 失败后调用。
+    /// 检查图片/音频数据魔数是否有效（用于检测旧版本解坏的残留文件）
+    static func isValidMediaMagic(_ data: Data) -> Bool {
+        guard data.count >= 4 else { return false }
+        let bytes = [UInt8](data.prefix(12))
+        // PNG
+        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 { return true }
+        // JPEG
+        if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF { return true }
+        // GIF
+        if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 { return true }
+        // WEBP (RIFF....WEBP)
+        if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+           && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 { return true }
+        // OGG
+        if bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53 { return true }
+        // MP3 (ID3 or sync)
+        if (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || (bytes[0] == 0xFF && bytes[1] == 0xFB) { return true }
+        // WAV (RIFF....WAVE)
+        if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+           && bytes[8] == 0x57 && bytes[10] == 0x41 && bytes[11] == 0x56 { return true }
+        // M4A/MP4 (ftyp at offset 4)
+        if data.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 { return true }
+        return false
+    }
+
     private func resolveEncryptedFallback(_ fileURL: URL) -> Data? {
         guard let key = decryptKey else { return nil }
         let extMap = ["png": "rpgmvp", "jpg": "rpgmvp", "jpeg": "rpgmvp", "gif": "rpgmvp", "webp": "rpgmvp",
@@ -139,12 +164,22 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 500, userInfo: nil))
                 return
             }
+            // 损坏检测：旧版本可能把 .rpgmvp 解坏成 .png（XOR key 错误），
+            // 文件存在但魔数无效。此时自动从同名 .rpgmvp 重新解密。
+            let ext = finalURL.pathExtension.lowercased()
+            let isMedia = ["png","jpg","jpeg","gif","webp","ogg","m4a","mp3","wav","mp4","webm"].contains(ext)
+            var finalData = data
+            if isMedia, !GameSchemeHandler.isValidMediaMagic(data),
+               let repaired = resolveEncryptedFallback(fileURL) {
+                finalData = repaired
+                CrashReporter.log("scheme auto-repair corrupt: \(rel)")
+            }
             let mime = mimeType(finalURL.pathExtension)
             let response = URLResponse(url: url, mimeType: mime,
-                                       expectedContentLength: data.count,
+                                       expectedContentLength: finalData.count,
                                        textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
             urlSchemeTask.didReceive(response)
-            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didReceive(finalData)
             urlSchemeTask.didFinish()
         } else if let decrypted = resolveEncryptedFallback(fileURL) {
             // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
