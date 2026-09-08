@@ -450,11 +450,53 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
               window.addEventListener("unhandledrejection", function (e) {
                 try {
                   var reason = e.reason;
-                  var msg = (reason && reason.message) || String(reason);
-                  var stack = (reason && reason.stack) ? ("\\nSTACK: " + reason.stack.substring(0, 500)) : "";
-                  window.webkit.messageHandlers.rpgConsole.postMessage("rejection: " + msg + stack);
+                  var parts = [];
+                  if (reason) {
+                    if (reason.name) parts.push("name=" + reason.name);
+                    if (reason.message) parts.push("msg=" + reason.message);
+                    if (reason.code !== undefined) parts.push("code=" + reason.code);
+                    if (reason.stack) parts.push("stack=" + reason.stack.substring(0, 300));
+                    // 尝试枚举其他属性
+                    try {
+                      var extras = [];
+                      for (var k in reason) {
+                        if (k !== "name" && k !== "message" && k !== "code" && k !== "stack") {
+                          var v = reason[k];
+                          if (typeof v !== "function") extras.push(k + "=" + String(v).substring(0, 100));
+                        }
+                      }
+                      if (extras.length) parts.push("extras=" + extras.join(","));
+                    } catch (e2) {}
+                  } else {
+                    parts.push("reason=null/undefined");
+                  }
+                  window.webkit.messageHandlers.rpgConsole.postMessage("rejection: " + parts.join(" | "));
                 } catch (err) {}
               });
+              // WebGL 上下文丢失检测
+              try {
+                var __webglChecked = false;
+                function __checkWebGL() {
+                  if (__webglChecked) return;
+                  var canvases = document.querySelectorAll("canvas");
+                  for (var i = 0; i < canvases.length; i++) {
+                    (function(canvas) {
+                      canvas.addEventListener("webglcontextlost", function(ev) {
+                        window.webkit.messageHandlers.rpgConsole.postMessage("webglcontextlost");
+                        ev.preventDefault();
+                      });
+                      canvas.addEventListener("webglcontextrestored", function() {
+                        window.webkit.messageHandlers.rpgConsole.postMessage("webglcontextrestored");
+                      });
+                      __webglChecked = true;
+                    })(canvases[i]);
+                  }
+                }
+                __checkWebGL();
+                // 延迟再检查一次（canvas 可能后创建）
+                setTimeout(__checkWebGL, 2000);
+                setTimeout(__checkWebGL, 5000);
+              } catch (e) {}
               // 监控资源加载错误
               document.addEventListener("error", function (e) {
                 try {
