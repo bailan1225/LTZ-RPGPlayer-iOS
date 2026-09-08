@@ -8,9 +8,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         CrashReporter.install()
-        // 首次启动默认值（register 不会覆盖用户已保存的设置）；纯词典模式仅需翻译开关
+        // 首次启动默认值（register 不会覆盖用户已保存的设置）
         UserDefaults.standard.register(defaults: [
-            "tr_enabled": true
+            "tr_enabled": true,
+            "tr_engine": 4,        // 默认 AQUA（免费、出中文）
+            "tr_target": "zh-CN",
+            "tr_source": "ja"
         ])
         createFirstRunStructure()
 
@@ -20,7 +23,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         gamesVC.tabBarItem = UITabBarItem(title: "游戏", image: UIImage(systemName: "gamecontroller"), selectedImage: nil)
 
         let settingsVC = SettingsViewController()
-        settingsVC.tabBarItem = UITabBarItem(title: "词典设置", image: UIImage(systemName: "character.bubble"), selectedImage: nil)
+        settingsVC.tabBarItem = UITabBarItem(title: "设置", image: UIImage(systemName: "gearshape"), selectedImage: nil)
 
         let tab = UITabBarController()
         tab.viewControllers = [
@@ -46,18 +49,22 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             let text = """
             【RPG Player 使用说明】
 
-            1. 放游戏：把含 index.html 或 www 的游戏文件夹，用爱思助手直接拖进本 App 的 Documents 文件夹
-               （或 文件App → 我的 iPhone → RPG Player），然后回 App 点「刷新列表」。
-               目录名含 [ ] 空格等字符也能自动处理，不影响。
+            1. 导入游戏：点右上角 + 选 zip 直接导入；或把含 www/data 的游戏文件夹
+               用爱思助手拖进本 App 的 Documents（文件App → 我的 iPhone → RPG Player）。
 
-            2. 放翻译文件：用「RPG 翻译器」翻完游戏后，把 translations/游戏名.json
-               拷入本目录下的 translations/ 文件夹，打开游戏即离线命中（列表显示「已翻译 N 条」）。
-               也支持任意 mtool 格式 {原文: 译文} JSON。
+            2. 翻译游戏：在「游戏」页点选游戏 → 「开始翻译」（默认 AQUA 引擎，出中文）。
+               翻译完自动写回游戏并保存 translations/游戏名.json，运行时离线命中。
+               也可在「设置」页切换引擎 / 填 Key / 调并发 / 测试连接。
 
-            3. 游戏通过内置协议直接加载本地文件，不需要联网，也不会请求「本地网络」权限。
+            3. 运行游戏：点选游戏 → 「▶ 运行游戏」。支持 MV/MZ、加密游戏（自动解密）、
+               作弊器（游戏内礼物图标）、存档导入导出（外接硬盘图标）。
 
-            4. 游戏页工具栏：刷新 / 作弊器（礼物图标）/ 翻译开关（气泡图标）。
-               列表页左上角「日志」可分享崩溃日志。
+            4. 翻译文件：「游戏」页左上角「翻译文件」可管理/编辑/导出 translations/*.json。
+               也支持放入 mtool 或其他工具导出的 {原文:译文} JSON。
+
+            5. 导出：点选游戏 → 「导出翻译后的游戏（zip）」可打包给第三方 Player 使用。
+
+            6. 游戏通过内置协议直接加载本地文件，不需要联网，也不会请求「本地网络」权限。
             """
             try? text.write(to: guide, atomically: true, encoding: .utf8)
         }
