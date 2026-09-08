@@ -27,9 +27,13 @@ final class GameDecryptor {
             CrashReporter.log("decrypt aborted: no key found")
             return (0, false)
         }
+        // 诊断：记录 key 的实际字节值
+        let keyHex = key.prefix(16).map { String(format: "%02X", $0) }.joined()
+        CrashReporter.log("decrypt key bytes: \(keyHex) (len=\(key.count))")
         var count = 0
         var fallbackCount = 0
         var failed: [String] = []
+        var sampleLogged = 0
         let fm = FileManager.default
         guard let it = fm.enumerator(
             at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return (0, false) }
@@ -37,6 +41,19 @@ final class GameDecryptor {
             let ext = url.pathExtension.lowercased()
             guard ["rpgmvp", "rpgmvo", "rpgmvm"].contains(ext),
                   let data = try? Data(contentsOf: url) else { continue }
+            // 诊断：记录前 3 个加密文件的原始头和解密后数据
+            if sampleLogged < 3 {
+                let headerHex = data.prefix(16).map { String(format: "%02X", $0) }.joined()
+                let body = data.dropFirst(16)
+                var xorSample = Data(count: min(16, body.count))
+                let kc = key.count
+                body.enumerated().forEach { i, b in
+                    if i < 16 { xorSample[i] = kc > 0 ? b ^ key[i % kc] : b }
+                }
+                let xorHex = xorSample.map { String(format: "%02X", $0) }.joined()
+                CrashReporter.log("decrypt sample[\(url.lastPathComponent)] header=\(headerHex) xor16=\(xorHex) size=\(data.count)")
+                sampleLogged += 1
+            }
             // 先算 XOR 结果，用于判断是否回退
             let body = data.dropFirst(16)
             var xorResult = Data(count: body.count)
