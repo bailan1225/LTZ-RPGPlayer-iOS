@@ -136,16 +136,41 @@ final class TranslateViewController: UITableViewController {
     }
 
     private func exportGame() {
-        let msg: String
-        if let ex = DataTranslator.exportGame(game, mapping: lastMapping) {
-            _ = ex
-            msg = "已导出到：文件App → 我的 iPhone → RPG 翻译器 → Exports\n把 \(self.game.root.lastPathComponent) 文件夹拷贝/移动到「RPG Player」的文稿目录即可游玩。"
-        } else {
-            msg = "导出失败，请重试。"
+        let progress = UIAlertController(
+            title: "正在打包…",
+            message: "大游戏可能需要一会儿，请勿关闭 App",
+            preferredStyle: .alert)
+        present(progress, animated: true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var result = ""
+            var ok = false
+            do {
+                guard let self = self else { return }
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let exportDir = docs.appendingPathComponent("Exports", isDirectory: true)
+                try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+                // 导出前修复多语言插件名（日文/中文 js），保证第三方 Player 能正常加载插件
+                GameDetector.fixPluginAliases(in: self.game.root)
+                let items = ZipWriter.collectFiles(in: self.game.root)
+                guard !items.isEmpty else { throw ZipWriter.ZipWriterError.cannotCreate }
+                let zipURL = exportDir.appendingPathComponent("\(self.game.root.lastPathComponent).zip")
+                try ZipWriter.createStoredZip(items: items, to: zipURL)
+                ok = true
+                result = "已导出：\(zipURL.lastPathComponent)（\(items.count) 个文件）\n\n用法：\n1. 用「文件」App → 我的 iPhone → RPG 翻译器 → Exports\n2. 长按 zip →「共享」→ 选择 RPG Pocket / QuestPlay / RPGEmu 导入\n3. 导入后即可运行中文版"
+            } catch {
+                result = "导出失败：\(error.localizedDescription)"
+            }
+            DispatchQueue.main.async {
+                self?.dismiss(animated: true) {
+                    let done = UIAlertController(
+                        title: ok ? "导出完成" : "导出失败",
+                        message: result,
+                        preferredStyle: .alert)
+                    done.addAction(UIAlertAction(title: "好", style: .default))
+                    self?.present(done, animated: true)
+                }
+            }
         }
-        let alert = UIAlertController(title: "导出", message: msg, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "好", style: .default))
-        present(alert, animated: true)
     }
 
     private func restore() {
@@ -245,7 +270,7 @@ final class TranslateViewController: UITableViewController {
             cell.textLabel?.textColor = .systemBlue
             cell.selectionStyle = .default
         case (2, 4):
-            cell.textLabel?.text = "导出到文件App"
+            cell.textLabel?.text = "导出翻译后的游戏（zip，供第三方 Player）"
             cell.textLabel?.textColor = .systemGreen
             cell.selectionStyle = .default
         case (2, 5):

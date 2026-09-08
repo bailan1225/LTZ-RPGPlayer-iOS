@@ -179,63 +179,7 @@ final class GameListViewController: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         guard !games.isEmpty else { return }
         let info = games[indexPath.row]
-        let a = UIAlertController(
-            title: displayName(for: info),
-            message: info.root.lastPathComponent,
-            preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "翻译 / 校对 / 导出", style: .default) { [weak self] _ in
-            guard let self = self else { return }
-            self.navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
-        })
-        a.addAction(UIAlertAction(title: "导出翻译后的游戏（zip，供第三方 Player 运行）", style: .default) { [weak self] _ in
-            guard let self = self else { return }
-            self.exportGame(info)
-        })
-        a.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = a.popoverPresentationController {
-            pop.sourceView = view
-            pop.sourceRect = tableView.rectForRow(at: indexPath)
-        }
-        present(a, animated: true)
-    }
-
-    /// 把翻译后的游戏整包导出为 zip 到 Documents/Exports，供 RPG Pocket / QuestPlay / RPGEmu 等第三方 Player 导入运行
-    private func exportGame(_ info: GameInfo) {
-        let progress = UIAlertController(
-            title: "正在打包…",
-            message: "大游戏可能需要一会儿，请勿关闭 App",
-            preferredStyle: .alert)
-        present(progress, animated: true)
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var result = ""
-            var ok = false
-            do {
-                let docs = Self.documents
-                let exportDir = docs.appendingPathComponent("Exports", isDirectory: true)
-                try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
-                let name = self?.displayName(for: info) ?? info.root.lastPathComponent
-                let zipURL = exportDir.appendingPathComponent("\(name).zip")
-                // 导出前修复多语言插件名（日文/中文 js），保证第三方 Player 能正常加载插件
-                GameDetector.fixPluginAliases(in: info.root)
-                let items = ZipWriter.collectFiles(in: info.root)
-                guard !items.isEmpty else { throw ZipWriter.ZipWriterError.cannotCreate }
-                try ZipWriter.createStoredZip(items: items, to: zipURL)
-                ok = true
-                result = "已导出：\(zipURL.lastPathComponent)\n（\(items.count) 个文件）\n\n用法：\n1. 安装任意第三方 Player（RPG Pocket / QuestPlay / RPGEmu，App Store 免费）\n2. 用「文件」App → 我的 iPhone → RPG 翻译器 → Exports，找到该 zip\n3. 长按 zip →「共享」→ 选择该 Player，或直接在 Player 内从文件App 导入\n\n导入后即可运行中文版，无需再经过本 App 的播放器。"
-            } catch {
-                result = "导出失败：\(error.localizedDescription)"
-            }
-            DispatchQueue.main.async {
-                self?.dismiss(animated: true) {
-                    let done = UIAlertController(
-                        title: ok ? "导出完成" : "导出失败",
-                        message: result,
-                        preferredStyle: .alert)
-                    done.addAction(UIAlertAction(title: "好", style: .default))
-                    self?.present(done, animated: true)
-                }
-            }
-        }
+        navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
