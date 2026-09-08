@@ -160,7 +160,7 @@
       // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
       var bodyObj = {
         messages: [
-          { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
+          { role: "system", content: buildPrompt(state.prompt, state.target) },
           { role: "user", content: trimmed }
         ],
         temperature: 0.3
@@ -185,7 +185,7 @@
       var bodyObj = {
         model: state.model || "agnes-2.5-flash",
         messages: [
-          { role: "system", content: state.prompt || "You are a game translator. Keep the tone, style and proper nouns." },
+          { role: "system", content: buildPrompt(state.prompt, state.target) },
           { role: "user", content: trimmed }
         ],
         temperature: 0.3,
@@ -226,7 +226,12 @@
       });
       return;
     }
-    function aquaLang(t) {
+    function buildPrompt(p, target) {
+    var lang = String(target || "zh-CN");
+    var langLine = "Translate into " + lang + ". Output ONLY the translated text, nothing else.";
+    return (p || "You are a game translator. Keep the tone, style and proper nouns.") + " " + langLine;
+  }
+  function aquaLang(t) {
       var low = String(t || "zh").toLowerCase();
       if (low.indexOf("zh") === 0) return "zh";
       if (low.indexOf("ja") === 0) return "ja";

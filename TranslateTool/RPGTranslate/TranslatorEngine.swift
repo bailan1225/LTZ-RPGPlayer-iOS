@@ -164,7 +164,7 @@ final class TranslatorEngine {
             // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
             var body: [String: Any] = [
                 "messages": [
-                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                    ["role": "system", "content": buildSystemPrompt()],
                     ["role": "user", "content": capped]
                 ],
                 "temperature": 0.3
@@ -195,7 +195,7 @@ final class TranslatorEngine {
             var body: [String: Any] = [
                 "model": agnesModel,
                 "messages": [
-                    ["role": "system", "content": config.prompt.isEmpty ? "You are a game translator. Keep the tone, style and proper nouns." : config.prompt],
+                    ["role": "system", "content": buildSystemPrompt()],
                     ["role": "user", "content": String(text.prefix(maxTextLength))]
                 ],
                 "temperature": 0.3,
@@ -239,6 +239,16 @@ final class TranslatorEngine {
         case .offline:
             completion(nil)
         }
+    }
+
+    /// 构造 system 提示词：始终强制锁定目标语言（避免免费模型自由发挥输出英文）
+    private func buildSystemPrompt() -> String {
+        let target = config.target.isEmpty ? "zh-CN" : config.target
+        let langLine = "Translate into \(target). Output ONLY the translated text, nothing else."
+        if config.prompt.isEmpty {
+            return "You are a game translator. Keep the tone, style and proper nouns. " + langLine
+        }
+        return config.prompt + " " + langLine
     }
 
     /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种可能格式 + 纯文本兜底）
