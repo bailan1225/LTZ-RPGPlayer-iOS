@@ -134,7 +134,30 @@ final class LocalHTTPServer {
             send(conn, status: 500, mime: "text/plain", body: Data("500".utf8))
             return
         }
-        send(conn, status: 200, mime: mimeType(resolved.pathExtension), body: body)
+        // HTTP 缓存：Last-Modified + If-Modified-Since → 304。
+        // 第二次进游戏静态资源走本地缓存秒开；文件被翻译/替换后 mtime 变化自动失效，不残留旧译文。
+        var headers: [String: String] = ["Cache-Control": "max-age=0, must-revalidate"]
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: resolved.path),
+           let mtime = attrs[.modificationDate] as? Date {
+            let fmt = DateFormatter()
+            fmt.locale = Locale(identifier: "en_US_POSIX")
+            fmt.timeZone = TimeZone(identifier: "GMT")
+            fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+            let lm = fmt.string(from: mtime)
+            headers["Last-Modified"] = lm
+            var imsValue: String?
+            for line in lines {
+                if line.lowercased().hasPrefix("if-modified-since:") {
+                    imsValue = String(line.dropFirst("if-modified-since:".count)).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            if let ims = imsValue, let since = fmt.date(from: ims),
+               mtime.timeIntervalSince(since) <= 1.0 {
+                send(conn, status: 304, mime: mimeType(resolved.pathExtension), body: Data(), headers: headers)
+                return
+            }
+        }
+        send(conn, status: 200, mime: mimeType(resolved.pathExtension), body: body, headers: headers)
     }
 
     /// 精确命中失败时在同目录做大小写不敏感匹配（兼容插件/资源文件名大小写不一致）
@@ -225,13 +248,14 @@ final class LocalHTTPServer {
         return String(format: "%016llx", h)
     }
 
-    private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
-        let reason = status == 200 ? "OK" : (status == 404 ? "Not Found" : "Error")
+    private func send(_ conn: NWConnection, status: Int, mime: String, body: Data, headers: [String: String] = [:]) {
+        let reason = status == 200 ? "OK" : (status == 304 ? "Not Modified" : (status == 404 ? "Not Found" : "Error"))
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: \(mime)\r\n"
-        head += "Content-Length: \(body.count)\r\n"
+        if status != 304 { head += "Content-Length: \(body.count)\r\n" }
         head += "Connection: close\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
+        for (k, v) in headers { head += "\(k): \(v)\r\n" }
         head += "\r\n"
         var payload = Data(head.utf8)
         payload.append(body)
