@@ -134,6 +134,8 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
         case "mp4": return "video/mp4"
+        // RPG Maker 加密文件：游戏 JS 用 arraybuffer 加载后自行解密
+        case "rpgmvp", "rpgmvo", "rpgmvm": return "application/octet-stream"
         case "webm": return "video/webm"
         case "mov": return "video/quicktime"
         default: return "application/octet-stream"
@@ -326,16 +328,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             let names = items.prefix(20).map { $0.lastPathComponent }.joined(separator: ", ")
             CrashReporter.log("game dir contents: \(names)")
         }
-        if let target = currentTarget, GameDecryptor.needsDecryption(in: target.readRoot) {
-            showLoading("正在解密游戏资源…")
-            let r = GameDecryptor.decryptIfNeeded(in: target.readRoot)
-            if r.ok && r.files > 0 {
-                CrashReporter.log("decrypted \(r.files) encrypted files")
-            } else if !r.ok {
-                CrashReporter.log("decrypt failed: encryption key not found")
-            }
-            hideLoading()
-        }
+        // 不预解密：保留 .rpgmvp 原文件，游戏 JS 的 Decrypter 自己解密（官方算法，避免我们的 XOR 实现出错）
         setupWebView()
         setupFloatingBall()
         loadGame()

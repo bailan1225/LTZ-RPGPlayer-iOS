@@ -218,12 +218,7 @@ final class GamesViewController: UITableViewController {
                     try FileManager.default.moveItem(at: dest, to: final)
                 }
                 try? FileManager.default.removeItem(at: zip)
-                // 自动修复格式：解密加密资源（运行时零开销）
-                var fixMsg = ""
-                if GameDecryptor.needsDecryption(in: final) {
-                    let r = GameDecryptor.decryptIfNeeded(in: final)
-                    if r.ok && r.files > 0 { fixMsg = "\n已自动解密 \(r.files) 个加密文件" }
-                }
+                // 不预解密：保留 .rpgmvp/.rpgmvo/.rpgmvm 原文件，游戏 JS 的 Decrypter 自己解密（官方算法，更可靠）
                 // 自动修复：注入 viewport（横屏居中显示）
                 GameImporter.fixViewport(in: final)
                 ok = true
@@ -420,16 +415,12 @@ final class GamesViewController: UITableViewController {
     /// 一键修复已导入游戏的格式：解密加密资源 + 注入 viewport/居中 CSS
     private func fixSelectedGame() {
         guard let game = selectedGame else { return }
-        let alert = UIAlertController(title: "修复游戏格式", message: "将自动解密加密资源并注入横屏适配。修复过程中请勿关闭 App。", preferredStyle: .alert)
+        let alert = UIAlertController(title: "修复游戏格式", message: "将注入横屏适配。加密资源由游戏 JS 自行解密。修复过程中请勿关闭 App。", preferredStyle: .alert)
         present(alert, animated: true)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var msg = ""
-            // 1) 解密
-            if GameDecryptor.needsDecryption(in: game.root) {
-                let r = GameDecryptor.decryptIfNeeded(in: game.root)
-                if r.ok && r.files > 0 { msg += "已解密 \(r.files) 个文件\n" }
-            }
-            // 2) 注入 viewport
+            // 不预解密：游戏 JS 的 Decrypter 自己处理加密文件
+            // 1) 注入 viewport
             GameImporter.fixViewport(in: game.root)
             msg += "已注入 viewport/居中 CSS"
             DispatchQueue.main.async {
