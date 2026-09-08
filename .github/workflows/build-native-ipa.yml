@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p Payload
-          cp -R "build/Build/Products/Release-iphoneos/RPGPlayer.app" Payload/
+          cp -R build/Build/Products/Release-iphoneos/*.app Payload/
           zip -ry RPGPlayer-unsigned.ipa Payload
 
       - name: Upload IPA artifact
