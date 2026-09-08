@@ -39,7 +39,7 @@ final class TranslatorEngine {
     var lastError: String {
         get { stateLock.lock(); defer { stateLock.unlock() }; return _lastError }
         set { stateLock.lock(); defer { stateLock.unlock() }; _lastError = newValue }
-    }""
+    }
 
     init(config: TranslationConfig) {
         self.config = config
