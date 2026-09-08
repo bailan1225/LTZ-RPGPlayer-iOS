@@ -32,8 +32,14 @@ final class TranslatorEngine {
     private let session: URLSession
     private let maxTextLength = 450   // MyMemory 单条上限约 500 字符，留余量
 
-    /// 最近一次 API 错误的中文描述（AQUA/Agnes/OpenAI 兼容 error.message），供界面诊断
-    private(set) var lastError = ""
+    private let stateLock = NSLock()
+
+    /// 最近一次 API 错误的中文描述（AQUA/Agnes/OpenAI 兼容 error.message），供界面诊断（并发安全）
+    private var _lastError = ""
+    var lastError: String {
+        get { stateLock.lock(); defer { stateLock.unlock() }; return _lastError }
+        set { stateLock.lock(); defer { stateLock.unlock() }; _lastError = newValue }
+    }""
 
     init(config: TranslationConfig) {
         self.config = config
@@ -85,7 +91,10 @@ final class TranslatorEngine {
     }
 
     func saveCache() {
-        guard let data = try? JSONSerialization.data(withJSONObject: cache) else { return }
+        stateLock.lock()
+        let snapshot = cache
+        stateLock.unlock()
+        guard let data = try? JSONSerialization.data(withJSONObject: snapshot) else { return }
         try? data.write(to: cacheURL, options: .atomic)
     }
 
@@ -95,14 +104,17 @@ final class TranslatorEngine {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { completion(nil); return }
 
-        // 缓存命中
-        if let hit = cache[text] {
+        // 缓存命中（并发下加锁读）
+        stateLock.lock()
+        let hit = cache[text]
+        stateLock.unlock()
+        if let hit = hit {
             completion(hit.isEmpty ? nil : hit)
             return
         }
-        // 词典命中
+        // 词典命中（dict 只读，并发安全）
         if let d = dict[text] {
-            cache[text] = d
+            stateLock.lock(); cache[text] = d; stateLock.unlock()
             completion(d)
             return
         }
@@ -117,7 +129,7 @@ final class TranslatorEngine {
         func finish(_ result: String?) {
             // 只缓存成功结果；失败项下次运行会重试（换 Key / 网络恢复后有效）
             if let r = result, !r.isEmpty, r != text {
-                cache[text] = r
+                stateLock.lock(); cache[text] = r; stateLock.unlock()
                 completion(r)
             } else {
                 completion(nil)
@@ -333,5 +345,8 @@ final class TranslatorEngine {
     }
 
     /// 当前缓存中的翻译条数（供界面展示）
-    var cachedCount: Int { cache.count }
+    var cachedCount: Int {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return cache.count
+    }
 }

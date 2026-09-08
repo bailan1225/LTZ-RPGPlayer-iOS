@@ -461,24 +461,25 @@ final class DataTranslator {
         let ovr = overrides()
         var mapping: [String: String] = ovr
         let total = unique.count
-        let semaphore = DispatchSemaphore(value: 3)
-        let queue = DispatchQueue(label: "rpgtranslate.batch")
+        let semaphore = DispatchSemaphore(value: 6)   // 6 路并发（AQUA/Agnes 免费通道可承受）
+        let resultQueue = DispatchQueue(label: "rpgtranslate.results")  // mapping 写入串行化
         let group = DispatchGroup()
+        let workQueue = DispatchQueue.global(qos: .userInitiated)       // 提交/写回后台执行，不卡 UI
 
-        func batchTranslate(_ items: [String], _ phase: String) {
+        func batchTranslate(_ items: [String], _ phase: String, done: @escaping () -> Void) {
             let toTranslate = items.filter { mapping[$0] == nil }
-            var doneInBatch = 0
-            for item in toTranslate {
-                if cancelled() { break }
-                semaphore.wait()
-                group.enter()
-                queue.async {
+            workQueue.async {
+                var doneInBatch = 0
+                for item in toTranslate {
+                    if cancelled() { break }
+                    semaphore.wait()
+                    group.enter()
                     engine.translate(item) { result in
-                        queue.async {
+                        resultQueue.async {
                             if let r = result { mapping[item] = r }
                             doneInBatch += 1
-                            if doneInBatch % 20 == 0 { engine.saveCache() }
-                            let pd = mapping.count   // 串行队列内读取，避免与主线程竞争
+                            if doneInBatch % 40 == 0 { engine.saveCache() }
+                            let pd = mapping.count
                             DispatchQueue.main.async {
                                 progress(TranslateProgress(phase: phase, done: pd, total: total))
                             }
@@ -487,44 +488,48 @@ final class DataTranslator {
                         }
                     }
                 }
+                group.wait()
+                engine.saveCache()
+                DispatchQueue.main.async { done() }
             }
-            group.wait()
-            engine.saveCache()
         }
 
         // 阶段 1：术语
         progress(TranslateProgress(phase: "翻译术语（人名/物品/技能）…", done: mapping.count, total: total))
-        batchTranslate(unique.filter { termSeen.contains($0) }, "翻译术语（人名/物品/技能）…")
-        // 术语表并入引擎词典：后续对话直接命中
-        engine.mergeDict(mapping)
-        if cancelled() { completion(TranslateSummary()); return }
+        batchTranslate(unique.filter { termSeen.contains($0) }, "翻译术语（人名/物品/技能）…") {
+            // 术语表并入引擎词典：后续对话直接命中
+            engine.mergeDict(mapping)
+            if cancelled() { completion(TranslateSummary()); return }
 
-        // 阶段 2：对话
-        progress(TranslateProgress(phase: "翻译对话…", done: mapping.count, total: total))
-        batchTranslate(unique.filter { !termSeen.contains($0) }, "翻译对话…")
-        engine.saveCache()
-        saveMapping(mapping, for: game)
+            // 阶段 2：对话
+            progress(TranslateProgress(phase: "翻译对话…", done: mapping.count, total: total))
+            batchTranslate(unique.filter { !termSeen.contains($0) }, "翻译对话…") {
+                engine.saveCache()
+                saveMapping(mapping, for: game)
+                if cancelled() { completion(TranslateSummary()); return }
 
-        if cancelled() { completion(TranslateSummary()); return }
-
-        // 写回
-        var summary = TranslateSummary(filesProcessed: scanned.count,
-                                       translatedUnique: mapping.count,
-                                       failedUnique: unique.count - mapping.count,
-                                       mapping: mapping)
-        for (i, item) in scanned.enumerated() {
-            if cancelled() { completion(summary); return }
-            let changed = writeBackFile(item.file, mapping: mapping, to: item.url)
-            summary.refsTotal += item.file.refs.count
-            summary.refsChanged += changed
-            if changed > 0 { summary.filesChanged += 1 }
-            DispatchQueue.main.async {
-                progress(TranslateProgress(phase: "写回文件…", done: i + 1, total: scanned.count))
+                // 写回（后台执行，大游戏不卡 UI）
+                workQueue.async {
+                    var summary = TranslateSummary(filesProcessed: scanned.count,
+                                                   translatedUnique: mapping.count,
+                                                   failedUnique: unique.count - mapping.count,
+                                                   mapping: mapping)
+                    for (i, item) in scanned.enumerated() {
+                        if cancelled() { DispatchQueue.main.async { completion(summary) }; return }
+                        let changed = writeBackFile(item.file, mapping: mapping, to: item.url)
+                        summary.refsTotal += item.file.refs.count
+                        summary.refsChanged += changed
+                        if changed > 0 { summary.filesChanged += 1 }
+                        DispatchQueue.main.async {
+                            progress(TranslateProgress(phase: "写回文件…", done: i + 1, total: scanned.count))
+                        }
+                    }
+                    saveMapping(mapping, for: game)
+                    summary.lastError = engine.lastError
+                    DispatchQueue.main.async { completion(summary) }
+                }
             }
         }
-        saveMapping(mapping, for: game)
-        summary.lastError = engine.lastError
-        completion(summary)
     }
 
     // MARK: - 备份 / 恢复 / 导出
