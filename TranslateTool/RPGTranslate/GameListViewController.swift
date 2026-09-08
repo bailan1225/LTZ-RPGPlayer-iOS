@@ -183,11 +183,6 @@ final class GameListViewController: UITableViewController {
             title: displayName(for: info),
             message: info.root.lastPathComponent,
             preferredStyle: .actionSheet)
-        a.addAction(UIAlertAction(title: "▶ 播放游戏（带翻译+作弊器）", style: .default) { [weak self] _ in
-            guard let self = self else { return }
-            let vc = GameViewController(gameDir: info.root)
-            self.navigationController?.pushViewController(vc, animated: true)
-        })
         a.addAction(UIAlertAction(title: "翻译 / 校对 / 导出", style: .default) { [weak self] _ in
             guard let self = self else { return }
             self.navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
@@ -220,6 +215,8 @@ final class GameListViewController: UITableViewController {
                 try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
                 let name = self?.displayName(for: info) ?? info.root.lastPathComponent
                 let zipURL = exportDir.appendingPathComponent("\(name).zip")
+                // 导出前修复多语言插件名（日文/中文 js），保证第三方 Player 能正常加载插件
+                GameDetector.fixPluginAliases(in: info.root)
                 let items = ZipWriter.collectFiles(in: info.root)
                 guard !items.isEmpty else { throw ZipWriter.ZipWriterError.cannotCreate }
                 try ZipWriter.createStoredZip(items: items, to: zipURL)
