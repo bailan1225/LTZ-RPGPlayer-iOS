@@ -417,6 +417,31 @@ final class GamesViewController: UITableViewController {
         present(sheet, animated: true)
     }
 
+    /// 一键修复已导入游戏的格式：解密加密资源 + 注入 viewport/居中 CSS
+    private func fixSelectedGame() {
+        guard let game = selectedGame else { return }
+        let alert = UIAlertController(title: "修复游戏格式", message: "将自动解密加密资源并注入横屏适配。修复过程中请勿关闭 App。", preferredStyle: .alert)
+        present(alert, animated: true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var msg = ""
+            // 1) 解密
+            if GameDecryptor.needsDecryption(in: game.root) {
+                let r = GameDecryptor.decryptIfNeeded(in: game.root)
+                if r.ok && r.files > 0 { msg += "已解密 \(r.files) 个文件\n" }
+            }
+            // 2) 注入 viewport
+            GameImporter.fixViewport(in: game.root)
+            msg += "已注入 viewport/居中 CSS"
+            DispatchQueue.main.async {
+                alert.dismiss(animated: true) {
+                    let a = UIAlertController(title: "修复完成", message: msg, preferredStyle: .alert)
+                    a.addAction(UIAlertAction(title: "好", style: .default))
+                    self?.present(a, animated: true)
+                }
+            }
+        }
+    }
+
     private func applyTranslationFile() {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -535,7 +560,7 @@ final class GamesViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if section == 0 { return max(games.count, 1) }
-        return selectedGame == nil ? 1 : 10
+        return selectedGame == nil ? 1 : 11
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -550,7 +575,8 @@ final class GamesViewController: UITableViewController {
                 cell.textLabel?.text = displayName(for: info)
                 cell.textLabel?.textColor = .label
                 let n = DataTranslator.savedMapping(for: info).count
-                cell.detailTextLabel?.text = n > 0 ? "已翻译 \(n) 条" : "未翻译"
+                let type = GameImporter.detectGameType(in: info.root)
+                cell.detailTextLabel?.text = "\(type) · " + (n > 0 ? "已翻译 \(n) 条" : "未翻译")
                 cell.accessoryType = indexPath.row == selectedIndex ? .checkmark : .none
                 if let icon = gameIcon(for: info.root) {
                     cell.imageView?.image = icon
@@ -617,6 +643,10 @@ final class GamesViewController: UITableViewController {
             cell.textLabel?.textColor = .systemOrange
             cell.selectionStyle = .default
         case 9:
+            cell.textLabel?.text = "🔧 修复游戏格式（解密/viewport）"
+            cell.textLabel?.textColor = .systemPurple
+            cell.selectionStyle = .default
+        case 10:
             cell.textLabel?.text = "▶ 运行游戏"
             cell.textLabel?.textColor = .systemGreen
             cell.selectionStyle = .default
@@ -658,6 +688,8 @@ final class GamesViewController: UITableViewController {
         case 8:
             restore()
         case 9:
+            fixSelectedGame()
+        case 10:
             guard let game = selectedGame else { return }
             let vc = GameViewController(gameDir: game.root)
             navigationController?.pushViewController(vc, animated: true)

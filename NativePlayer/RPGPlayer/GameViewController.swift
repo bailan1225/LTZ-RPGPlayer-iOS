@@ -14,6 +14,9 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
     private var fileIndex: [String: URL] = [:]
     private var indexBuilt = false
     private let indexLock = NSLock()
+    /// 跟踪活跃任务，stop 时标记取消（防止异步读取完成后对已取消任务调用 didFinish 崩溃）
+    private var activeTasks = Set<ObjectIdentifier>()
+    private let taskLock = NSLock()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -135,6 +138,11 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         let startTime = Date()
+        let taskID = ObjectIdentifier(urlSchemeTask)
+        taskLock.lock()
+        activeTasks.insert(taskID)
+        taskLock.unlock()
+
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: -1, userInfo: nil))
             return
@@ -142,13 +150,6 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         var path = url.path
         if path.isEmpty || path == "/" { path = "/index.html" }
         let rel = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        // 慢资源日志：超过 500ms 的本地文件读取会记录（定位 The operation was aborted）
-        defer {
-            let elapsed = Date().timeIntervalSince(startTime)
-            if elapsed > 0.5 {
-                CrashReporter.log(String(format: "scheme slow: %.2fs %@", elapsed, rel))
-            }
-        }
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
         // 目录穿越防护：只允许 root 范围内
         let rootPath = root.path
@@ -156,57 +157,96 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 403, userInfo: nil))
             return
         }
-        var isDir: ObjCBool = false
-        if let resolved = resolve(fileURL),
-           FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) {
-            var finalURL = resolved
-            if isDir.boolValue {
-                guard let idx = resolve(resolved.appendingPathComponent("index.html")),
-                      FileManager.default.fileExists(atPath: idx.path) else {
-                    urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404, userInfo: nil))
+
+        // 异步读取文件：避免大文件阻塞 WKURLSchemeHandler 线程导致 The operation was aborted
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            // 检查任务是否已取消
+            self.taskLock.lock()
+            let isActive = self.activeTasks.contains(taskID)
+            self.taskLock.unlock()
+            guard isActive else { return }
+
+            // 慢资源日志：超过 500ms 的本地文件读取会记录
+            defer {
+                let elapsed = Date().timeIntervalSince(startTime)
+                if elapsed > 0.5 {
+                    CrashReporter.log(String(format: "scheme slow: %.2fs %@", elapsed, rel))
+                }
+            }
+
+            var isDir: ObjCBool = false
+            if let resolved = self.resolve(fileURL),
+               FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) {
+                var finalURL = resolved
+                if isDir.boolValue {
+                    guard let idx = self.resolve(resolved.appendingPathComponent("index.html")),
+                          FileManager.default.fileExists(atPath: idx.path) else {
+                        self.failTask(urlSchemeTask, code: 404, message: "404 \(rel)")
+                        return
+                    }
+                    finalURL = idx
+                }
+                guard let data = try? Data(contentsOf: finalURL) else {
+                    self.failTask(urlSchemeTask, code: 500, message: "read error \(rel)")
                     return
                 }
-                finalURL = idx
+                // 损坏检测：旧版本可能把 .rpgmvp 解坏成 .png（XOR key 错误），
+                // 文件存在但魔数无效。此时自动从同名 .rpgmvp 重新解密。
+                let ext = finalURL.pathExtension.lowercased()
+                let isMedia = ["png","jpg","jpeg","gif","webp","ogg","m4a","mp3","wav","mp4","webm"].contains(ext)
+                var finalData = data
+                if isMedia, !GameSchemeHandler.isValidMediaMagic(data),
+                   let repaired = self.resolveEncryptedFallback(fileURL) {
+                    finalData = repaired
+                    CrashReporter.log("scheme auto-repair corrupt: \(rel)")
+                }
+                let mime = self.mimeType(finalURL.pathExtension)
+                let response = URLResponse(url: url, mimeType: mime,
+                                           expectedContentLength: finalData.count,
+                                           textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
+                self.succeedTask(urlSchemeTask, response: response, data: finalData)
+            } else if let decrypted = self.resolveEncryptedFallback(fileURL) {
+                // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
+                let mime = self.mimeType(fileURL.pathExtension)
+                let response = URLResponse(url: url, mimeType: mime,
+                                           expectedContentLength: decrypted.count,
+                                           textEncodingName: nil)
+                self.succeedTask(urlSchemeTask, response: response, data: decrypted)
+                CrashReporter.log("scheme decrypt-fallback: \(rel)")
+            } else {
+                CrashReporter.log("scheme 404: \(rel)")
+                self.failTask(urlSchemeTask, code: 404, message: "404 \(rel)")
             }
-            guard let data = try? Data(contentsOf: finalURL) else {
-                urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 500, userInfo: nil))
-                return
-            }
-            // 损坏检测：旧版本可能把 .rpgmvp 解坏成 .png（XOR key 错误），
-            // 文件存在但魔数无效。此时自动从同名 .rpgmvp 重新解密。
-            let ext = finalURL.pathExtension.lowercased()
-            let isMedia = ["png","jpg","jpeg","gif","webp","ogg","m4a","mp3","wav","mp4","webm"].contains(ext)
-            var finalData = data
-            if isMedia, !GameSchemeHandler.isValidMediaMagic(data),
-               let repaired = resolveEncryptedFallback(fileURL) {
-                finalData = repaired
-                CrashReporter.log("scheme auto-repair corrupt: \(rel)")
-            }
-            let mime = mimeType(finalURL.pathExtension)
-            let response = URLResponse(url: url, mimeType: mime,
-                                       expectedContentLength: finalData.count,
-                                       textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
-            urlSchemeTask.didReceive(response)
-            urlSchemeTask.didReceive(finalData)
-            urlSchemeTask.didFinish()
-        } else if let decrypted = resolveEncryptedFallback(fileURL) {
-            // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
-            let mime = mimeType(fileURL.pathExtension)
-            let response = URLResponse(url: url, mimeType: mime,
-                                       expectedContentLength: decrypted.count,
-                                       textEncodingName: nil)
-            urlSchemeTask.didReceive(response)
-            urlSchemeTask.didReceive(decrypted)
-            urlSchemeTask.didFinish()
-            CrashReporter.log("scheme decrypt-fallback: \(rel)")
-        } else {
-            CrashReporter.log("scheme 404: \(rel)")
-            urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404,
-                                                   userInfo: [NSLocalizedDescriptionKey: "404 \(rel)"]))
         }
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+        let taskID = ObjectIdentifier(urlSchemeTask)
+        taskLock.lock()
+        activeTasks.remove(taskID)
+        taskLock.unlock()
+    }
+
+    /// 安全完成任务：检查任务是否仍活跃，避免对已取消任务调用 didFinish 崩溃
+    private func succeedTask(_ task: WKURLSchemeTask, response: URLResponse, data: Data) {
+        taskLock.lock()
+        let isActive = activeTasks.contains(ObjectIdentifier(task))
+        taskLock.unlock()
+        guard isActive else { return }
+        task.didReceive(response)
+        task.didReceive(data)
+        task.didFinish()
+    }
+
+    private func failTask(_ task: WKURLSchemeTask, code: Int, message: String) {
+        taskLock.lock()
+        let isActive = activeTasks.contains(ObjectIdentifier(task))
+        taskLock.unlock()
+        guard isActive else { return }
+        task.didFailWithError(NSError(domain: "GameScheme", code: code,
+                                      userInfo: [NSLocalizedDescriptionKey: message]))
+    }
 }
 
 /// 游戏运行页：WKWebView 以 rpg:// 自定义协议加载游戏，并注入翻译/作弊/存档/控制台捕获脚本
