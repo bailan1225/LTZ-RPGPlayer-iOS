@@ -465,6 +465,47 @@ final class GameListViewController: UITableViewController {
 
     // MARK: - Table
 
+    // 滑动删除游戏（清理游戏文件、备份与词典）
+    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
+        indexPath.section == 0 && !games.isEmpty
+    }
+
+    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
+        guard editingStyle == .delete, indexPath.section == 0, indexPath.row < games.count else { return }
+        let info = games[indexPath.row]
+        let name = displayName(for: info)
+        let confirm = UIAlertController(title: "删除游戏", message: "确定删除「\(name)」？\n\n将同时删除：\n· 游戏文件（含已翻译写回的内容）\n· 该游戏的备份与词典\n\n此操作不可恢复。", preferredStyle: .alert)
+        confirm.addAction(UIAlertAction(title: "删除", style: .destructive) { [weak self] _ in
+            self?.deleteGame(info, at: indexPath)
+        })
+        confirm.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(confirm, animated: true)
+    }
+
+    private func deleteGame(_ info: GameInfo, at indexPath: IndexPath) {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        // 游戏目录（含翻译写回的内容）
+        try? fm.removeItem(at: info.root)
+        // 备份目录
+        for b in DataTranslator.backups(for: info) { try? fm.removeItem(at: b) }
+        // 翻译词典
+        let dict = docs.appendingPathComponent("translations")
+            .appendingPathComponent(info.root.lastPathComponent + ".json")
+        try? fm.removeItem(at: dict)
+        // 若删除的是当前选中游戏，清理选中状态
+        if selectedIndex == indexPath.row {
+            selectedIndex = nil
+            stats = nil
+            summary = nil
+            isRunning = false
+            cancelFlag = false
+            phaseLabel?.text = " "
+            progressView?.progress = 0
+        }
+        refresh()
+    }
+
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {

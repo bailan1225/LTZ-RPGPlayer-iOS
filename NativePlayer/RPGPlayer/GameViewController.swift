@@ -38,7 +38,9 @@ final class LocalHTTPServer {
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            // 不限定 loopback 接口：iOS17 上 loopback-only 监听可能只绑 IPv6，导致 127.0.0.1 连不上
+            // 显式绑定 127.0.0.1（IPv4 回环）：纯 loopback 不触发 iOS 本地网络权限，
+            // 避免 on: .any 监听局域网接口导致弹权限窗、被拒后 127.0.0.1 连不上
+            params.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: .any)
             let l = try NWListener(using: params, on: .any)
             l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
             l.stateUpdateHandler = { [weak self] state in
@@ -134,7 +136,30 @@ final class LocalHTTPServer {
             send(conn, status: 500, mime: "text/plain", body: Data("500".utf8))
             return
         }
-        send(conn, status: 200, mime: mimeType(resolved.pathExtension), body: body)
+        // HTTP 缓存：Last-Modified + If-Modified-Since → 304。
+        // 第二次进游戏静态资源走本地缓存秒开；文件被翻译/替换后 mtime 变化自动失效，不残留旧译文。
+        var headers: [String: String] = ["Cache-Control": "max-age=0, must-revalidate"]
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: resolved.path),
+           let mtime = attrs[.modificationDate] as? Date {
+            let fmt = DateFormatter()
+            fmt.locale = Locale(identifier: "en_US_POSIX")
+            fmt.timeZone = TimeZone(identifier: "GMT")
+            fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+            let lm = fmt.string(from: mtime)
+            headers["Last-Modified"] = lm
+            var imsValue: String?
+            for line in lines {
+                if line.lowercased().hasPrefix("if-modified-since:") {
+                    imsValue = String(line.dropFirst("if-modified-since:".count)).trimmingCharacters(in: .whitespaces)
+                }
+            }
+            if let ims = imsValue, let since = fmt.date(from: ims),
+               mtime.timeIntervalSince(since) <= 1.0 {
+                send(conn, status: 304, mime: mimeType(resolved.pathExtension), body: Data(), headers: headers)
+                return
+            }
+        }
+        send(conn, status: 200, mime: mimeType(resolved.pathExtension), body: body, headers: headers)
     }
 
     /// 精确命中失败时在同目录做大小写不敏感匹配（兼容插件/资源文件名大小写不一致）
@@ -225,13 +250,14 @@ final class LocalHTTPServer {
         return String(format: "%016llx", h)
     }
 
-    private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {
-        let reason = status == 200 ? "OK" : (status == 404 ? "Not Found" : "Error")
+    private func send(_ conn: NWConnection, status: Int, mime: String, body: Data, headers: [String: String] = [:]) {
+        let reason = status == 200 ? "OK" : (status == 304 ? "Not Modified" : (status == 404 ? "Not Found" : "Error"))
         var head = "HTTP/1.1 \(status) \(reason)\r\n"
         head += "Content-Type: \(mime)\r\n"
-        head += "Content-Length: \(body.count)\r\n"
+        if status != 304 { head += "Content-Length: \(body.count)\r\n" }
         head += "Connection: close\r\n"
         head += "Access-Control-Allow-Origin: *\r\n"
+        for (k, v) in headers { head += "\(k): \(v)\r\n" }
         head += "\r\n"
         var payload = Data(head.utf8)
         payload.append(body)
@@ -268,7 +294,7 @@ final class LocalHTTPServer {
 }
 
 /// 游戏运行页：WKWebView 加载游戏 index.html，并注入翻译脚本
-final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate {
+final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
 
     private let gameDir: URL
     private var webView: WKWebView!
@@ -276,6 +302,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private var loadingView: UIView?
     private var loadingDeadline: DispatchWorkItem?
     private var currentTarget: (index: URL, readRoot: URL)?
+    private var pageLoaded = false
 
     init(gameDir: URL) {
         self.gameDir = gameDir
@@ -311,6 +338,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         httpServer?.stop()
+        navigationController?.setToolbarHidden(true, animated: false)
         forceOrientation(.portrait)
     }
 
@@ -345,6 +373,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
+        webView.uiDelegate = self
         // iOS 17 触摸/键盘细节：点击更跟手、拖拽收起键盘
         webView.scrollView.bounces = false
         webView.scrollView.delaysContentTouches = false
@@ -408,6 +437,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     private func setupToolbar() {
         let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
+        let save = UIBarButtonItem(
+            image: UIImage(systemName: "externaldrive"),
+            style: .plain, target: self, action: #selector(manageSaves))
+        save.tintColor = .systemTeal
+        save.accessibilityLabel = "存档管理"
         let toggle = UIBarButtonItem(
             image: UIImage(systemName: "character.bubble"),
             style: .plain, target: self, action: #selector(toggleTranslate))
@@ -418,12 +452,122 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
         cheat.accessibilityLabel = "作弊器"
-        toolbarItems = [reload, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
+        toolbarItems = [reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
     }
 
     @objc private func toggleCheat() {
         webView.evaluateJavaScript("window.RPGCheat && window.RPGCheat.toggle();") { _, _ in }
+    }
+
+    // MARK: - 存档管理（mtool 风格：备份/恢复 localStorage）
+
+    private static var docs: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    private static var savesDir: URL {
+        let d = docs.appendingPathComponent("Saves", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private var gameDisplayName: String {
+        SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent
+    }
+
+    @objc private func manageSaves() {
+        let a = UIAlertController(title: "存档管理（\(gameDisplayName)）", message: nil, preferredStyle: .actionSheet)
+        a.addAction(UIAlertAction(title: "备份当前存档", style: .default) { [weak self] _ in self?.backupSaves() })
+        a.addAction(UIAlertAction(title: "恢复存档", style: .default) { [weak self] _ in self?.listSaves() })
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = a.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(a, animated: true)
+    }
+
+    private func backupSaves() {
+        guard pageLoaded else {
+            toast("游戏还没加载完，稍后再备份")
+            return
+        }
+        let js = "(function(){var o={};for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);o[k]=localStorage.getItem(k);}return JSON.stringify(o);})()"
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self = self else { return }
+            if let json = result as? String, !json.isEmpty, json != "{}" {
+                let name = "\(self.gameDisplayName)_\(Self.timestamp()).json"
+                let url = Self.savesDir.appendingPathComponent(name)
+                do {
+                    try json.write(to: url, atomically: true, encoding: .utf8)
+                    self.toast("存档已备份：\(name)")
+                } catch {
+                    self.toast("备份写入失败")
+                }
+            } else {
+                self.toast("没有可备份的存档（\(error?.localizedDescription ?? "空")）")
+            }
+        }
+    }
+
+    private func listSaves() {
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: Self.savesDir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+        guard !files.isEmpty else {
+            toast("还没有存档备份")
+            return
+        }
+        let a = UIAlertController(title: "恢复存档", message: "选择要恢复的备份（会覆盖当前游戏存档）", preferredStyle: .actionSheet)
+        for f in files {
+            a.addAction(UIAlertAction(title: f.lastPathComponent, style: .default) { [weak self] _ in
+                self?.restoreSaves(from: f)
+            })
+        }
+        a.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = a.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(a, animated: true)
+    }
+
+    private func restoreSaves(from file: URL) {
+        guard let data = try? Data(contentsOf: file),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              !obj.isEmpty else {
+            toast("备份文件无效")
+            return
+        }
+        // 序列化注入语句：先清空再写入
+        var js = "localStorage.clear();"
+        for (k, v) in obj {
+            let kk = (k as NSString).replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            let vv = (v as NSString).replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+            js += "localStorage.setItem('\(kk)','\(vv)');"
+        }
+        js += "location.reload();"
+        webView.evaluateJavaScript(js) { [weak self] _, error in
+            self?.toast(error == nil ? "存档已恢复，正在重载…" : "恢复失败：\(error?.localizedDescription ?? "")")
+        }
+    }
+
+    private static func timestamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd_HHmmss"
+        return f.string(from: Date())
+    }
+
+    private func toast(_ msg: String) {
+        DispatchQueue.main.async {
+            let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            self.present(alert, animated: true)
+        }
     }
 
     @objc private func reload() {
@@ -455,11 +599,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         // 加载超时防护：45 秒未完成（didFinish 未到）自动收起浮层并记录，避免"一直加载"
         loadingDeadline?.cancel()
         let deadline = DispatchWorkItem { [weak self] in
-            CrashReporter.log("loading timeout: didFinish not received within 45s")
+            CrashReporter.log("loading timeout: didFinish not received within 90s")
             self?.hideLoading()
         }
         loadingDeadline = deadline
-        DispatchQueue.main.asyncAfter(deadline: .now() + 45, execute: deadline)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 90, execute: deadline)
         // 多语言插件名修复（日文/中文/语言后缀 js）：plugins.js 引用名与文件不匹配时建别名
         GameDetector.fixPluginAliases(in: target.readRoot)
         httpServer?.stop()
@@ -485,8 +629,15 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         }, onFailure: { [weak self] in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                let rootStr = target.readRoot.path.hasSuffix("/") ? target.readRoot.path : target.readRoot.path + "/"
-                self.webView.loadFileURL(target.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
+                CrashReporter.log("local http server failed to start")
+                self.hideLoading()
+                // file:// 在 iOS17 下 XHR 被拦，无法真正运行游戏——明确提示而非假装降级
+                let alert = UIAlertController(
+                    title: "本地服务器启动失败",
+                    message: "请重启 App 后重试；如仍失败，请检查 设置 → 隐私与安全性 → 本地网络 是否允许本 App。",
+                    preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: "好", style: .default))
+                self.present(alert, animated: true)
             }
         })
     }
@@ -500,6 +651,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        pageLoaded = true
         hideLoading()
         loadingDeadline?.cancel()
     }
@@ -515,17 +667,40 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         CrashReporter.log("GameViewController provisional error: (error.localizedDescription)")
         let desc = error.localizedDescription.lowercased()
         if desc.contains("could not connect") || desc.contains("network connection") {
-            CrashReporter.log("local network blocked, falling back to file://")
-            if let t = currentTarget {
-                let rootStr = t.readRoot.path.hasSuffix("/") ? t.readRoot.path : t.readRoot.path + "/"
-                webView.loadFileURL(t.index, allowingReadAccessTo: URL(fileURLWithPath: rootStr, isDirectory: true))
-            }
+            CrashReporter.log("local network blocked (127.0.0.1)")
+            self.hideLoading()
+            // 不再自动降级 file://（iOS17 下 XHR 被拦，降级无法运行游戏）
             let alert = UIAlertController(
-                title: "本地网络被拦截，已切换兼容模式",
-                message: "游戏已改用 file:// 模式加载（可能影响本地数据读取）。如仍无法运行，请到 设置 → 隐私与安全性 → 本地网络 允许本 App 后刷新重试。",
+                title: "无法连接本地游戏服务器",
+                message: "请到 设置 → 隐私与安全性 → 本地网络，允许本 App 后返回刷新重试。\n\n若该开关不存在：重启一次 App 触发权限弹窗并点「允许」即可。",
                 preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .default))
             present(alert, animated: true)
         }
+    }
+
+    // MARK: - WKUIDelegate（作弊器 prompt 输入：设置变量/开关）
+
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
+                 defaultText: String?, initiatedByFrame frame: WKFrameInfo,
+                 completionHandler: @escaping (String?) -> Void) {
+        let alert = UIAlertController(title: "作弊器输入", message: prompt, preferredStyle: .alert)
+        alert.addTextField { tf in
+            tf.text = defaultText ?? ""
+            tf.keyboardType = .numbersAndPunctuation
+            tf.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in
+            completionHandler(alert.textFields?.first?.text)
+        })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(nil) })
+        present(alert, animated: true)
+    }
+
+    func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
+                 initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+        let alert = UIAlertController(title: "提示", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default) { _ in completionHandler() })
+        present(alert, animated: true)
     }
 }

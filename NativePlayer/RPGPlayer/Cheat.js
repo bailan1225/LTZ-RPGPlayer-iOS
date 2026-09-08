@@ -128,6 +128,35 @@
     } catch (err) { toast("出错: " + err.message); }
   }
 
+  // 设置变量（ArkRPG 同款：直接改 $gameVariables）
+  function cheatVariable() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    var input = prompt("设置变量\n格式：变量ID:数值（如 5:100）");
+    if (!input) return;
+    var parts = input.split(":");
+    var id = parseInt(parts[0], 10);
+    var val = parseFloat(parts[1]);
+    if (isNaN(id) || isNaN(val)) { toast("格式错误，应为 ID:数值"); return; }
+    if (window.$gameVariables && typeof $gameVariables.setValue === "function") {
+      $gameVariables.setValue(id, val);
+      toast("变量 " + id + " = " + val);
+    } else { toast("变量系统不可用"); }
+  }
+
+  // 切换开关（ArkRPG 同款：直接改 $gameSwitches）
+  function cheatSwitch() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    var input = prompt("切换开关\n输入开关ID（如 12）");
+    if (!input) return;
+    var id = parseInt(input, 10);
+    if (isNaN(id)) { toast("格式错误，应为数字"); return; }
+    if (window.$gameSwitches && typeof $gameSwitches.value === "function") {
+      var cur = !!$gameSwitches.value(id);
+      $gameSwitches.setValue(id, !cur);
+      toast("开关 " + id + " → " + (cur ? "关" : "开"));
+    } else { toast("开关系统不可用"); }
+  }
+
   // 快速存档 / 快速读档（槽位 0；对应 mtool 存档快捷键，MV/MZ 通用）
   function quickSave() {
     if (!ready()) { toast("未进入游戏"); return; }
@@ -274,6 +303,8 @@
       ["一击必杀 切换", toggleOneHit],
       ["战斗直接胜利", cheatWin],
       ["战斗直接逃跑", cheatEscape],
+      ["设置变量", cheatVariable],
+      ["切换开关", cheatSwitch],
       ["快速存档", quickSave],
       ["快速读档", quickLoad],
       ["对敌伤害 x", cycleEnemyDamage],
