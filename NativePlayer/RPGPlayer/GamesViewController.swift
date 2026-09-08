@@ -72,6 +72,19 @@ final class GamesViewController: UITableViewController {
         return info.root.lastPathComponent
     }
 
+    /// 游戏封面缩略图：查找 MV/MZ 的 icon.png（www/icon.png 或根目录 icon.png）
+    private func gameIcon(for root: URL) -> UIImage? {
+        let fm = FileManager.default
+        let candidates = [
+            root.appendingPathComponent("www").appendingPathComponent("icon.png"),
+            root.appendingPathComponent("icon.png")
+        ]
+        for c in candidates where fm.fileExists(atPath: c.path) {
+            if let img = UIImage(contentsOfFile: c.path) { return img }
+        }
+        return nil
+    }
+
     private var selectedGame: GameInfo? {
         guard let i = selectedIndex, i < games.count else { return nil }
         return games[i]
@@ -531,6 +544,14 @@ final class GamesViewController: UITableViewController {
                 let n = DataTranslator.savedMapping(for: info).count
                 cell.detailTextLabel?.text = n > 0 ? "已翻译 \(n) 条" : "未翻译"
                 cell.accessoryType = indexPath.row == selectedIndex ? .checkmark : .none
+                if let icon = gameIcon(for: info.root) {
+                    cell.imageView?.image = icon
+                    cell.imageView?.layer.cornerRadius = 6
+                    cell.imageView?.layer.masksToBounds = true
+                } else {
+                    cell.imageView?.image = UIImage(systemName: "gamecontroller")
+                    cell.imageView?.tintColor = .systemOrange
+                }
             }
             return cell
         }
