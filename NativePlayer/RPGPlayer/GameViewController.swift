@@ -15,6 +15,10 @@ final class LocalHTTPServer {
     /// 已处理的请求数 / 监听端口（供加载诊断）
     private(set) var requestCount = 0
     private(set) var port: UInt16 = 0
+    /// 索引并发保护 / 就绪信号（后台预热，首个请求等待，不阻塞连接队列导致"一直加载"）
+    private let indexLock = NSLock()
+    private let indexReady = DispatchSemaphore(value: 0)
+    private var indexWaited = false
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -26,6 +30,11 @@ final class LocalHTTPServer {
     /// 否则会出现 "Could not connect to the server"。
     func start(onReady: @escaping (UInt16) -> Void, onFailure: @escaping () -> Void) {
         guard listener == nil else { return }
+        // 索引预热：后台构建文件索引，首个请求等待就绪（避免扫描阻塞连接处理导致"一直加载"）
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.buildIndexIfNeeded()
+            self?.indexReady.signal()
+        }
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
@@ -132,7 +141,7 @@ final class LocalHTTPServer {
     /// 优化：启动时一次性建立全树索引，命中 O(1)，不再每次请求扫描目录
     private func resolveFile(_ url: URL) -> URL? {
         if FileManager.default.fileExists(atPath: url.path) { return url }
-        buildIndexIfNeeded()
+        ensureIndexReady()
         let name = url.lastPathComponent.lowercased()
         if let hit = fileIndex[name] { return hit }
         // 兜底：可能请求运行时生成的文件（存档等），现场扫一次并回填索引
@@ -146,7 +155,17 @@ final class LocalHTTPServer {
         return nil
     }
 
+    private func ensureIndexReady() {
+        if !indexWaited {
+            indexWaited = true
+            _ = indexReady.wait(timeout: .now() + 120)
+        }
+        if !indexBuilt { buildIndexIfNeeded() }
+    }
+
     private func buildIndexIfNeeded() {
+        indexLock.lock()
+        defer { indexLock.unlock() }
         guard !indexBuilt else { return }
         indexBuilt = true
         // 持久化索引：.rpgcache/fi-<根目录签名>.json（游戏目录两次打开间不变，免去每次全树扫描）
@@ -191,9 +210,19 @@ final class LocalHTTPServer {
 
     private func shallowSignature(_ dir: URL) -> String {
         guard let items = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return "?" }
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { return "0" }
         let names = items.map { $0.lastPathComponent }.sorted()
-        return String(names.joined(separator: ",").hashValue & 0xffffffff, radix: 16)
+        // FNV-1a 64 位：跨进程稳定（String.hashValue 每次进程随机，不能用于持久化缓存键）
+        var h: UInt64 = 0xcbf29ce484222325
+        for name in names {
+            for b in name.utf8 {
+                h ^= UInt64(b)
+                h = h &* 0x100000001b3
+            }
+            h ^= 0x2c
+            h = h &* 0x100000001b3
+        }
+        return String(format: "%016llx", h)
     }
 
     private func send(_ conn: NWConnection, status: Int, mime: String, body: Data) {

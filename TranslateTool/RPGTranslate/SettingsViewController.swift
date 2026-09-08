@@ -53,6 +53,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     @objc private func engineChanged() {
         defaults.set(engineControl.selectedSegmentIndex, forKey: "tr_engine")
+        saveAllFields()
         tableView.reloadData()
     }
 
@@ -84,6 +85,50 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         defaults.set(promptField.text ?? "", forKey: "tr_prompt")
     }
 
+    private func apiCell(_ cell: UITableViewCell, _ title: String, _ field: UITextField, _ w: CGFloat) {
+        cell.textLabel?.text = title
+        field.frame = CGRect(x: 0, y: 0, width: w, height: 32)
+        cell.accessoryView = field
+    }
+
+    private func testCell(_ cell: UITableViewCell) {
+        cell.textLabel?.text = "测试翻译连接"
+        cell.textLabel?.textColor = .systemBlue
+        cell.accessoryType = .disclosureIndicator
+        cell.selectionStyle = .default
+    }
+
+    /// 用当前引擎与配置发一条真实翻译请求，验证 Key / 地址 / 网络 / 额度
+    @objc private func testTapped() {
+        saveAllFields()
+        let eng = TranslationEngine(rawValue: engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine")) ?? .offline
+        let cfg = TranslationConfig(
+            engine: eng,
+            source: sourceField.text ?? "ja",
+            target: targetField.text ?? "zh-CN",
+            apiUrl: urlField.text ?? "",
+            apiKey: keyField.text ?? "",
+            prompt: promptField.text ?? "",
+            model: modelField.text ?? "",
+            memEmail: memEmailField.text ?? "")
+        let engine = TranslatorEngine(config: cfg)
+        let loading = UIAlertController(title: "测试翻译连接", message: "正在发送测试请求…", preferredStyle: .alert)
+        present(loading, animated: true)
+        engine.translate("こんにちは、世界。") { result in
+            DispatchQueue.main.async {
+                loading.dismiss(animated: true) {
+                    let ok = result != nil
+                    var msg = ok ? "测试请求成功\n返回：\(result!)" : "未获得译文。\n请检查：API Key、地址、网络、额度。"
+                    if !engine.lastError.isEmpty { msg += "\n\n错误信息：\(engine.lastError)" }
+                    let alert = UIAlertController(title: ok ? "连接成功" : "连接失败",
+                                                  message: msg, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "好", style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         return true
@@ -104,11 +149,21 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
-        case 0: return 3
+        case 0: return engineControl?.selectedSegmentIndex == 1 ? 3 : 2   // MyMemory 才显示邮箱行
         case 1: return 2
-        case 2: return 4
+        case 2: return apiRows()
         case 3: return 2
         case 4: return 0
+        default: return 0
+        }
+    }
+
+    private func apiRows() -> Int {
+        switch engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine") {
+        case 0, 1: return 1   // 离线/MyMemory：无需 API 配置
+        case 2: return 5      // 自定义：地址/Key/模型/提示词/测试
+        case 3: return 3      // Agnes：Key/模型/测试
+        case 4: return 2      // AQUA：Key/测试（tools/translate 无需模型）
         default: return 0
         }
     }
@@ -133,7 +188,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 0:
-            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：固定地址 https://api.ltzy.top/v1/chat/completions，默认模型 glm-4-flash-250414（免费、健康分高、翻译质量好）；可换 qwen2-7b-instruct / kimi-k3 / minimax-m3 等免费模型；唯一收费模型 aqua/deepseek-v4-flash 已默认避开。Key 在 acu.ltzy.top/console 创建（sk-）。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：走官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费、不需要模型名），只需填 Key。Key 在 acu.ltzy.top/console 创建（sk-）。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         case 4:
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -162,6 +217,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = "MyMemory 邮箱"
             cell.accessoryView = memEmailField
             memEmailField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)
+            cell.selectionStyle = .none
         case (1, 0):
             cell.textLabel?.text = "源语言"
             cell.accessoryView = sourceField
@@ -170,22 +226,34 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = "目标语言"
             cell.accessoryView = targetField
             targetField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
-        case (2, 0):
-            cell.textLabel?.text = "API 地址"
-            cell.accessoryView = urlField
-            urlField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)
-        case (2, 1):
-            cell.textLabel?.text = "API Key"
-            cell.accessoryView = keyField
-            keyField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
-        case (2, 2):
-            cell.textLabel?.text = "模型"
-            cell.accessoryView = modelField
-            modelField.frame = CGRect(x: 0, y: 0, width: 180, height: 32)
-        case (2, 3):
-            cell.textLabel?.text = "翻译提示词"
-            cell.accessoryView = promptField
-            promptField.frame = CGRect(x: 0, y: 0, width: 200, height: 32)
+        case (2, let row):
+            let eng = engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine")
+            switch eng {
+            case 0, 1:
+                cell.textLabel?.text = "当前引擎无需 API 配置"
+                cell.textLabel?.textColor = .secondaryLabel
+            case 2:
+                switch row {
+                case 0: apiCell(cell, "API 地址", urlField, 220)
+                case 1: apiCell(cell, "API Key", keyField, 200)
+                case 2: apiCell(cell, "模型", modelField, 190)
+                case 3: apiCell(cell, "翻译提示词", promptField, 220)
+                default: testCell(cell)
+                }
+            case 3:
+                switch row {
+                case 0: apiCell(cell, "API Key", keyField, 200)
+                case 1: apiCell(cell, "模型（默认 agnes-2.5-flash）", modelField, 190)
+                default: testCell(cell)
+                }
+            case 4:
+                switch row {
+                case 0: apiCell(cell, "API Key", keyField, 200)
+                default: testCell(cell)
+                }
+            default:
+                break
+            }
         case (3, 0):
             cell.textLabel?.text = "清除翻译缓存"
             cell.textLabel?.textColor = .systemRed
@@ -202,6 +270,12 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        if indexPath.section == 2 {
+            let eng = engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine")
+            let testRow = eng == 2 ? 4 : (eng == 3 ? 2 : (eng == 4 ? 1 : -1))
+            if indexPath.row == testRow { testTapped() }
+            return
+        }
         guard indexPath.section == 3 else { return }
         if indexPath.row == 0 {
             let fm = FileManager.default
