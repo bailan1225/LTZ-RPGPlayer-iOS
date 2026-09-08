@@ -524,15 +524,29 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private func showBallMenu() {
         let trOn = defaults.bool(forKey: "tr_enabled")
         let alert = UIAlertController(title: "游戏菜单", message: nil, preferredStyle: .actionSheet)
+        // 常用选项
         alert.addAction(UIAlertAction(title: "✕ 返回列表", style: .default) { [weak self] _ in self?.backToList() })
         alert.addAction(UIAlertAction(title: "↻ 刷新游戏", style: .default) { [weak self] _ in self?.reload() })
-        alert.addAction(UIAlertAction(title: "💾 存档管理", style: .default) { [weak self] _ in self?.saveMenu() })
-        alert.addAction(UIAlertAction(title: "🎁 作弊器", style: .default) { [weak self] _ in self?.toggleCheat() })
         alert.addAction(UIAlertAction(title: trOn ? "💬 翻译：开（点此关闭）" : "💬 翻译：关（点此开启）", style: .default) { [weak self] _ in
             self?.toggleTranslate()
         })
+        // 更多选项
+        alert.addAction(UIAlertAction(title: "⋯ 更多（存档/作弊）", style: .default) { [weak self] _ in
+            self?.showMoreMenu()
+        })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        // iPad 适配
+        if let pop = alert.popoverPresentationController, let ball = floatingBall {
+            pop.sourceView = ball
+            pop.sourceRect = ball.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func showMoreMenu() {
+        let alert = UIAlertController(title: "更多", message: nil, preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "💾 存档管理", style: .default) { [weak self] _ in self?.saveMenu() })
+        alert.addAction(UIAlertAction(title: "🎁 作弊器", style: .default) { [weak self] _ in self?.toggleCheat() })
+        alert.addAction(UIAlertAction(title: "返回", style: .cancel))
         if let pop = alert.popoverPresentationController, let ball = floatingBall {
             pop.sourceView = ball
             pop.sourceRect = ball.bounds
@@ -543,32 +557,21 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let ball = floatingBall else { return }
-        // 横屏时悬浮球自动缩小成 10pt 半透明点（不遮挡游戏画面），竖屏恢复正常
-        let isLandscape = view.bounds.width > view.bounds.height
-        let targetSize: CGFloat = isLandscape ? 10 : 46
-        let targetAlpha: CGFloat = isLandscape ? 0.25 : 1.0
-        if ball.bounds.width != targetSize {
-            UIView.animate(withDuration: 0.2) {
-                ball.bounds = CGRect(x: 0, y: 0, width: targetSize, height: targetSize)
-                ball.layer.cornerRadius = targetSize / 2
-                ball.alpha = targetAlpha
-            }
-        }
+        // 横屏/竖屏都保持悬浮球正常大小（用户可双击手动缩小）
         // 确保悬浮球在可见范围内
-        let margin: CGFloat = 4
+        let margin: CGFloat = 8
         let minX = margin + ball.bounds.width / 2
         let maxX = view.bounds.width - margin - ball.bounds.width / 2
         let minY = margin + ball.bounds.height / 2
         let maxY = view.bounds.height - margin - ball.bounds.height / 2
-        ball.center = CGPoint(
-            x: min(max(ball.center.x, minX), maxX),
-            y: min(max(ball.center.y, minY), maxY))
-        // 横屏布局变化后通知游戏重新计算 canvas 大小
-        if pageLoaded {
-            webView?.evaluateJavaScript("""
-                try { window.dispatchEvent(new Event('resize')); } catch(e) {}
-                try { if (window.Graphics && Graphics._requestUpdate) Graphics._requestUpdate(); } catch(e) {}
-            """)
+        let cx = min(max(ball.center.x, minX), maxX)
+        let cy = min(max(ball.center.y, minY), maxY)
+        if ball.center.x != cx || ball.center.y != cy {
+            ball.center = CGPoint(x: cx, y: cy)
+        }
+        // 方向变化后通知 WebView 重算布局（修复横屏游戏画面偏移）
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript("window.dispatchEvent(new Event('resize')); if(typeof Graphics!=='undefined'&&Graphics._requestUpdate)Graphics._requestUpdate();", completionHandler: nil)
         }
     }
 
