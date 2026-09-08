@@ -309,6 +309,29 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         super.init(nibName: nil, bundle: nil)
     }
 
+    /// 由游戏目录路径生成跨进程稳定的 UUID（WKWebsiteDataStore 按游戏隔离存档，
+    /// 同一游戏每次打开用同一存储空间；多游戏互不污染）
+    private static func stableStoreID(for dir: URL) -> UUID {
+        var h1: UInt64 = 0xcbf29ce484222325
+        var h2: UInt64 = 0x84222325cbf29ce4
+        let key = dir.standardizedFileURL.path
+        for b in key.utf8 {
+            h1 ^= UInt64(b)
+            h1 = h1 &* 0x100000001b3
+            h2 ^= UInt64(b) &+ 0x9e
+            h2 = h2 &* 0x100000001b3
+        }
+        var bytes = [UInt8](repeating: 0, count: 16)
+        for i in 0..<8 {
+            bytes[i] = UInt8(truncatingIfNeeded: h1 >> (i * 8))
+            bytes[8 + i] = UInt8(truncatingIfNeeded: h2 >> (i * 8))
+        }
+        bytes[6] = (bytes[6] & 0x0f) | 0x40
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewDidLoad() {
@@ -364,9 +387,49 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         contentController.addUserScript(WKUserScript(
             source: CheatJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 4) 注入控制台/错误捕获（诊断"不能玩"根因：JS 报错、XHR 失败、未捕获异常全量进日志）
+        contentController.addUserScript(WKUserScript(
+            source: """
+            (function () {
+              if (window.__rpgConsoleHooked) return;
+              window.__rpgConsoleHooked = true;
+              ["log", "warn", "error", "info"].forEach(function (level) {
+                var orig = console[level];
+                console[level] = function () {
+                  try {
+                    var args = Array.prototype.slice.call(arguments).map(function (a) {
+                      try {
+                        if (a && a.message) return a.message;
+                        if (typeof a === "string") return a;
+                        return JSON.stringify(a);
+                      } catch (e) { return String(a); }
+                    });
+                    window.webkit.messageHandlers.rpgConsole.postMessage(level + ": " + args.join(" "));
+                  } catch (e) {}
+                  orig.apply(console, arguments);
+                };
+              });
+              window.addEventListener("error", function (e) {
+                try {
+                  window.webkit.messageHandlers.rpgConsole.postMessage("error: " + (e.message || "") + " @" + (e.filename || "") + ":" + (e.lineno || ""));
+                } catch (err) {}
+              });
+              window.addEventListener("unhandledrejection", function (e) {
+                try {
+                  window.webkit.messageHandlers.rpgConsole.postMessage("rejection: " + ((e.reason && e.reason.message) || String(e.reason)));
+                } catch (err) {}
+              });
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         contentController.add(self, name: "rpgTr")
         contentController.add(self, name: "rpgCheat")
+        contentController.add(self, name: "rpgConsole")
 
+        // 每游戏独立存档空间：默认 dataStore 被所有游戏共享，多游戏会互相污染存档/IndexedDB
+        if #available(iOS 11.0, *) {
+            config.websiteDataStore = WKWebsiteDataStore(forIdentifier: Self.stableStoreID(for: gameDir))
+        }
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
@@ -645,6 +708,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     // MARK: - WKScriptMessageHandler
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "rpgConsole", let text = message.body as? String {
+            // JS 控制台/报错进崩溃日志，供列表页「日志」查看定位问题
+            CrashReporter.log("[js] " + text)
+            return
+        }
         print("rpgTr:", message.body)
     }
 
