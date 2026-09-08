@@ -1,7 +1,9 @@
 import UIKit
+import UniformTypeIdentifiers
 
-/// 游戏列表：递归扫描 Documents 下所有可识别的游戏目录（含 index.html 或 www）
-final class GamesViewController: UITableViewController {
+/// 游戏列表：递归扫描 Documents 下所有可识别的游戏目录（含 index.html 或 www），
+/// 支持 zip 直接导入（系统文件选择器，与翻译器同款流程）
+final class GamesViewController: UITableViewController, UIDocumentPickerDelegate {
 
     private var games: [URL] = []
     private var translationCounts: [String: Int] = [:]  // 目录名 → 已翻译词条数
@@ -77,7 +79,7 @@ final class GamesViewController: UITableViewController {
             }
         }
 
-        // Documents 根本身也可能是裸 www 游戏（js 直接铺在根下）
+        // Documents 根本本身也可能是裸 www 游戏（js 直接铺在根下）
         if GameDetector.isGameDir(docs) {
             found.append(SafePath.sanitize(docs))
         }
@@ -100,11 +102,35 @@ final class GamesViewController: UITableViewController {
         return url.lastPathComponent
     }
 
-    /// iOS 17 侧载环境下系统文件夹选择器会闪退，这里不直接弹选择器，
-    /// 改为导入指南 + 刷新（文件App / 爱思助手直拖是最稳妥的导入方式）
     @objc private func importGame() {
+        let sheet = UIAlertController(title: "导入游戏", message: nil, preferredStyle: .actionSheet)
+        sheet.addAction(UIAlertAction(title: "导入 zip 文件", style: .default) { [weak self] _ in
+            self?.pickZip()
+        })
+        sheet.addAction(UIAlertAction(title: "导入文件夹（文件App / 爱思）", style: .default) { [weak self] _ in
+            self?.showFolderGuide()
+        })
+        sheet.addAction(UIAlertAction(title: "刷新列表", style: .default) { [weak self] _ in
+            self?.refreshGames()
+        })
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func pickZip() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip], asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = false
+        present(picker, animated: true)
+    }
+
+    private func showFolderGuide() {
         let alert = UIAlertController(
-            title: "导入游戏",
+            title: "导入文件夹",
             message: "把游戏文件夹放入本 App 的文稿目录（自动识别 index.html / www / 裸 www）：\n\n① 文件App：打开「文件」→「我的 iPhone」→「RPG Player」，把整个游戏文件夹拷入\n\n② 爱思助手：连接设备 → 应用 → RPG Player → 浏览 → 把游戏文件夹直接拖进 Documents\n\n拷入后点「刷新列表」即可自动识别。",
             preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "刷新列表", style: .default) { [weak self] _ in
@@ -112,6 +138,34 @@ final class GamesViewController: UITableViewController {
         })
         alert.addAction(UIAlertAction(title: "好", style: .cancel))
         present(alert, animated: true)
+    }
+
+    // MARK: - UIDocumentPickerDelegate（zip 导入）
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let src = urls.first else { return }
+        // 安全作用域：必须先申请访问权限再读文件（否则复制必然失败）
+        let scoped = src.startAccessingSecurityScopedResource()
+        defer { if scoped { src.stopAccessingSecurityScopedResource() } }
+        let docs = Self.documents
+        let name = src.deletingPathExtension().lastPathComponent
+        let dest = docs.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        do {
+            let n = try ZipExtractor.extract(src, to: dest)
+            refreshGames()
+            let alert = UIAlertController(
+                title: "导入完成",
+                message: "已解压 \(n) 个文件到「\(name)」。\n若列表出现同名重复项，保留含 www/index.html 的那个，其余可自行删除。",
+                preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+        } catch {
+            try? FileManager.default.removeItem(at: dest)
+            let alert = UIAlertController(title: "导入失败", message: "\(error.localizedDescription)", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+        }
     }
 
     // MARK: - Table view
@@ -146,6 +200,6 @@ final class GamesViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "导入游戏：文件App 或爱思助手把游戏文件夹放入本 App 的 Documents（含 index.html 或 www 均可，自动识别），回本 App 点右上角 + 选「刷新列表」。\n\n游戏运行页为横屏。"
+        "导入游戏：右上角 + 可直接导入 zip；或文件App / 爱思助手把游戏文件夹放入本 App 的 Documents（含 index.html 或 www 均可，自动识别）。\n\n游戏运行页为横屏。"
     }
 }
