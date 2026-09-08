@@ -229,15 +229,11 @@ final class TranslatorEngine {
                 completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .aqua:
-            // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（免费、不调用模型），
-            // 解析失败自动回退对话模型（免费 glm-4-flash，官方网页翻译同款端点，保证出译文）
+            // AQUA 网关：仅使用官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费），不调用模型接口
             let capped = String(text.prefix(maxTextLength))
             let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
-                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
-                self.aquaChatFallback(text: capped, completion: completion)
-                return
-            }
+                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else { completion(nil); return }
             var toolReq = URLRequest(url: toolURL)
             toolReq.httpMethod = "POST"
             toolReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -246,13 +242,10 @@ final class TranslatorEngine {
             session.dataTask(with: toolReq) { [weak self] data, _, err in
                 guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    self?.aquaChatFallback(text: capped, completion: completion)
+                    completion(nil)
                     return
                 }
-                guard let r = self.parseToolTranslate(data, original: capped) else {
-                    self.aquaChatFallback(text: capped, completion: completion)
-                    return
-                }
+                guard let r = self.parseToolTranslate(data) else { completion(nil); return }
                 completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
@@ -270,105 +263,33 @@ final class TranslatorEngine {
         return config.prompt + " " + langLine
     }
 
-    /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种格式 + 递归兜底提取译文 + 失败诊断）
-    private func parseToolTranslate(_ data: Data, original: String) -> String? {
+    /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种可能格式 + 纯文本兜底）
+    private func parseToolTranslate(_ data: Data) -> String? {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            for k in ["translation", "translatedText", "translated_text", "text", "result", "output", "dst", "content", "message"] {
-                if let v = obj[k] as? String, !v.isEmpty, v != original { return v }
+            for k in ["translation", "translatedText", "text", "result"] {
+                if let v = obj[k] as? String, !v.isEmpty { return v }
             }
-            if let v = obj["data"] as? String, !v.isEmpty, v != original { return v }
             if let d = obj["data"] as? [String: Any] {
-                for k in ["text", "translation", "translatedText", "translated_text", "output", "result", "dst"] {
-                    if let v = d[k] as? String, !v.isEmpty, v != original { return v }
+                for k in ["text", "translation", "translatedText"] {
+                    if let v = d[k] as? String, !v.isEmpty { return v }
                 }
-                if let arr = d["translations"] as? [[String: Any]] {
-                    for x in arr {
-                        if let t = x["translatedText"] as? String, !t.isEmpty { return t }
-                        if let t = x["text"] as? String, !t.isEmpty, t != original { return t }
-                    }
-                }
-                if let arr = d["translations"] as? [String], let t = arr.first, !t.isEmpty, t != original { return t }
+                if let arr = d["translations"] as? [[String: Any]],
+                   let x = arr.first?["translatedText"] as? String { return x }
             }
             if let choices = obj["choices"] as? [[String: Any]],
                let first = choices.first,
                let msg = first["message"] as? [String: Any],
-               let c = msg["content"] as? String, !c.isEmpty { return c }
-            if let e = obj["error"] as? [String: Any] {
-                let m = (e["message"] as? String) ?? "未知错误"
+               let c = msg["content"] as? String { return c }
+            if let e = obj["error"] as? [String: Any], let m = e["message"] as? String {
                 lastError = m
                 print("API error:", m)
-                return nil
             }
-            // 递归兜底：排除原文回显与元数据后，取最像译文的长字符串
-            var best: String?
-            var bestScore = 0
-            collectTranslationCandidates(obj, original: original, into: &best, score: &bestScore)
-            if let b = best { return b }
-            // 诊断：响应格式未识别，把原文存进 lastError 供设置页「测试翻译连接」展示
-            let raw = String(data: data, encoding: .utf8) ?? ""
-            lastError = "响应格式未识别：\(String(raw.prefix(200)))"
-            print("AQUA raw:", raw.prefix(200))
             return nil
         }
         let t = String(data: data, encoding: .utf8) ?? ""
-        if !t.isEmpty, t != original { return t }
-        lastError = "空响应"
-        return nil
+        return t.isEmpty ? nil : t
     }
 
-    /// 递归收集"像译文"的字符串：跳过元数据键，排除原文回显/URL/纯数字，取最长
-    private func collectTranslationCandidates(_ any: Any, original: String,
-                                              into best: inout String?, score: inout Int) {
-        if let s = any as? String {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard t.count >= 2, t != original, !t.contains("://"),
-                  !t.contains("{"), !t.contains("[") else { return }
-            if t.count > score { score = t.count; best = t }
-            return
-        }
-        if let d = any as? [String: Any] {
-            let skipKeys: Set<String> = ["error", "message", "code", "status", "type", "id",
-                                         "model", "object", "created", "usage", "role",
-                                         "finish_reason", "help", "hint", "version", "url"]
-            for (k, v) in d where !skipKeys.contains(k) {
-                collectTranslationCandidates(v, original: original, into: &best, score: &score)
-            }
-            return
-        }
-        if let a = any as? [Any] {
-            for v in a { collectTranslationCandidates(v, original: original, into: &best, score: &score) }
-        }
-    }
-
-
-    /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + glm-4-flash）
-    private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
-        guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
-        let model = config.model.isEmpty ? "glm-4-flash" : config.model
-        var body: [String: Any] = [
-            "model": model,
-            "messages": [
-                ["role": "system", "content": buildSystemPrompt()],
-                ["role": "user", "content": text]
-            ],
-            "temperature": 0.2,
-            "max_tokens": 4096
-        ]
-        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { completion(nil); return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
-        req.httpBody = bodyData
-        session.dataTask(with: req) { [weak self] data, _, err in
-            guard let data = data, let self = self else {
-                self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                completion(nil)
-                return
-            }
-            completion(self.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
-        }.resume()
-    }
 
     /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
     private func aquaLang(_ t: String) -> String {
