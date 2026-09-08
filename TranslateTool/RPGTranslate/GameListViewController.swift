@@ -192,6 +192,10 @@ final class GameListViewController: UITableViewController {
             guard let self = self else { return }
             self.navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
         })
+        a.addAction(UIAlertAction(title: "导出翻译后的游戏（zip，供第三方 Player 运行）", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            self.exportGame(info)
+        })
         a.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let pop = a.popoverPresentationController {
             pop.sourceView = view
@@ -200,7 +204,44 @@ final class GameListViewController: UITableViewController {
         present(a, animated: true)
     }
 
+    /// 把翻译后的游戏整包导出为 zip 到 Documents/Exports，供 RPG Pocket / QuestPlay / RPGEmu 等第三方 Player 导入运行
+    private func exportGame(_ info: GameInfo) {
+        let progress = UIAlertController(
+            title: "正在打包…",
+            message: "大游戏可能需要一会儿，请勿关闭 App",
+            preferredStyle: .alert)
+        present(progress, animated: true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var result = ""
+            var ok = false
+            do {
+                let docs = Self.documents
+                let exportDir = docs.appendingPathComponent("Exports", isDirectory: true)
+                try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+                let name = self?.displayName(for: info) ?? info.root.lastPathComponent
+                let zipURL = exportDir.appendingPathComponent("\(name).zip")
+                let items = ZipWriter.collectFiles(in: info.root)
+                guard !items.isEmpty else { throw ZipWriter.ZipWriterError.cannotCreate }
+                try ZipWriter.createStoredZip(items: items, to: zipURL)
+                ok = true
+                result = "已导出：\(zipURL.lastPathComponent)\n（\(items.count) 个文件）\n\n用法：\n1. 安装任意第三方 Player（RPG Pocket / QuestPlay / RPGEmu，App Store 免费）\n2. 用「文件」App → 我的 iPhone → RPG 翻译器 → Exports，找到该 zip\n3. 长按 zip →「共享」→ 选择该 Player，或直接在 Player 内从文件App 导入\n\n导入后即可运行中文版，无需再经过本 App 的播放器。"
+            } catch {
+                result = "导出失败：\(error.localizedDescription)"
+            }
+            DispatchQueue.main.async {
+                self?.dismiss(animated: true) {
+                    let done = UIAlertController(
+                        title: ok ? "导出完成" : "导出失败",
+                        message: result,
+                        preferredStyle: .alert)
+                    done.addAction(UIAlertAction(title: "好", style: .default))
+                    self?.present(done, animated: true)
+                }
+            }
+        }
+    }
+
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "把含 www/data（或 data）的游戏文件夹放入本 App 的文稿目录（文件App / 爱思助手直拖），自动识别 MV/MZ。\n\n游戏、词典、翻译、存档全部在本 App 内共用：翻译完直接点「播放」即可玩到中文版，无需导出转移。游戏运行页为横屏。"
+        "把含 www/data（或 data）的游戏文件夹或 zip 压缩包放入本 App 的文稿目录，自动识别 MV/MZ。\n\n翻译完可点「导出翻译后的游戏（zip）」交给第三方 Player（RPG Pocket / QuestPlay / RPGEmu）运行，或直接点「播放游戏」使用内置播放器（横屏）。"
     }
 }
