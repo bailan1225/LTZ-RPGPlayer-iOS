@@ -458,6 +458,45 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
                   }
                 } catch (err) {}
               }, true);
+              // 拦截 XHR：记录所有请求的 URL/状态/耗时/abort
+              try {
+                var origOpen = XMLHttpRequest.prototype.open;
+                var origSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open = function (method, url) {
+                  this.__url = url; this.__startTime = Date.now();
+                  return origOpen.apply(this, arguments);
+                };
+                XMLHttpRequest.prototype.send = function () {
+                  var self = this; var url = (this.__url || "?").toString().substring(0, 120);
+                  this.addEventListener("load", function () {
+                    window.webkit.messageHandlers.rpgConsole.postMessage("xhr: " + self.status + " " + (Date.now() - self.__startTime) + "ms " + url);
+                  });
+                  this.addEventListener("error", function () {
+                    window.webkit.messageHandlers.rpgConsole.postMessage("xhr-error: " + (Date.now() - self.__startTime) + "ms " + url);
+                  });
+                  this.addEventListener("abort", function () {
+                    window.webkit.messageHandlers.rpgConsole.postMessage("xhr-ABORT: " + (Date.now() - self.__startTime) + "ms " + url);
+                  });
+                  return origSend.apply(this, arguments);
+                };
+              } catch (e) {}
+              // 拦截 fetch：记录所有请求的 URL/状态/耗时/error
+              try {
+                var origFetch = window.fetch;
+                if (origFetch) {
+                  window.fetch = function (input, init) {
+                    var url = (typeof input === "string" ? input : (input && input.url) || "?").substring(0, 120);
+                    var st = Date.now();
+                    return origFetch.apply(this, arguments).then(function (resp) {
+                      window.webkit.messageHandlers.rpgConsole.postMessage("fetch: " + resp.status + " " + (Date.now() - st) + "ms " + url);
+                      return resp;
+                    }).catch(function (err) {
+                      window.webkit.messageHandlers.rpgConsole.postMessage("fetch-error: " + (Date.now() - st) + "ms " + url + " " + (err.message || String(err)));
+                      throw err;
+                    });
+                  };
+                }
+              } catch (e) {}
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
