@@ -219,7 +219,20 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 self.succeedTask(urlSchemeTask, response: response, data: decrypted)
                 CrashReporter.log("scheme decrypt-fallback: \(rel)")
             } else {
-                CrashReporter.log("scheme 404: \(rel)")
+                // 最后尝试：fileIndex 全局查找同名文件（可能在不同目录，RPG Maker 资源名唯一）
+                let name = fileURL.lastPathComponent.lowercased()
+                if let hit = self.fileIndex[name], let data = try? Data(contentsOf: hit) {
+                    let mime = self.mimeType(hit.pathExtension)
+                    let response = URLResponse(url: url, mimeType: mime,
+                                               expectedContentLength: data.count,
+                                               textEncodingName: nil)
+                    self.succeedTask(urlSchemeTask, response: response, data: data)
+                    CrashReporter.log("scheme 404→index hit: \(rel) -> \(hit.lastPathComponent)")
+                    return
+                }
+                let indexCount = self.fileIndex.count
+                let hasName = self.fileIndex[name] != nil
+                CrashReporter.log("scheme 404: \(rel) | index:\(indexCount) nameMatch:\(hasName)")
                 self.failTask(urlSchemeTask, code: 404, message: "404 \(rel)")
             }
         }
