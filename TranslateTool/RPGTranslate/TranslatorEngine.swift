@@ -344,7 +344,7 @@ final class TranslatorEngine {
     /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + glm-4-flash）
     private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
-        let model = config.model.isEmpty ? "glm-4-flash" : config.model
+        let model = config.model.isEmpty ? "glm-4-flash-250414" : config.model
         var body: [String: Any] = [
             "model": model,
             "messages": [
