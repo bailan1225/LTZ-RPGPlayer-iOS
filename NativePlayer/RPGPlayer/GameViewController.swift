@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import UniformTypeIdentifiers
 
 /// 自定义 URL scheme 处理器：rpg://game/<path> 直接读本地文件返回。
 /// 替代本地 HTTP 服务器 —— 消除 "Could not connect" / 本地网络权限弹窗 / 端口问题，
@@ -137,8 +138,8 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
-/// 游戏运行页：WKWebView 以 rpg:// 自定义协议加载游戏，并注入翻译/作弊/控制台捕获脚本
-final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
+/// 游戏运行页：WKWebView 以 rpg:// 自定义协议加载游戏，并注入翻译/作弊/存档/控制台捕获脚本
+final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, UIDocumentPickerDelegate {
 
     private let gameDir: URL
     private var webView: WKWebView!
@@ -220,7 +221,37 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         contentController.addUserScript(WKUserScript(
             source: CheatJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // 4) 注入控制台/错误捕获（诊断"不能玩"根因：JS 报错、XHR 失败、未捕获异常全量进日志）
+        // 4) 注入存档桥接（导出/导入 MV/MZ 的 localStorage 存档，key 以 RPGMV 开头）
+        contentController.addUserScript(WKUserScript(
+            source: """
+            (function () {
+              if (window.__rpgSaveHooked) return;
+              window.__rpgSaveHooked = true;
+              window.RPGSave = {
+                exportAll: function () {
+                  var out = {};
+                  for (var i = 0; i < localStorage.length; i++) {
+                    var k = localStorage.key(i);
+                    if (k && k.indexOf("RPGMV") === 0) { out[k] = localStorage.getItem(k); }
+                  }
+                  return JSON.stringify(out);
+                },
+                importBase64: function (b64) {
+                  try {
+                    var json = decodeURIComponent(escape(atob(b64)));
+                    var obj = JSON.parse(json);
+                    var n = 0;
+                    for (var k in obj) {
+                      if (obj.hasOwnProperty(k)) { localStorage.setItem(k, obj[k]); n++; }
+                    }
+                    return "ok:" + n;
+                  } catch (e) { return "err:" + ((e && e.message) || String(e)); }
+                }
+              };
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 5) 注入控制台/错误捕获（诊断"不能玩"根因：JS 报错、XHR 失败、未捕获异常全量进日志）
         contentController.addUserScript(WKUserScript(
             source: """
             (function () {
@@ -334,6 +365,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     private func setupToolbar() {
         let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
+        let save = UIBarButtonItem(
+            image: UIImage(systemName: "externaldrive"),
+            style: .plain, target: self, action: #selector(saveMenu))
+        save.accessibilityLabel = "存档导入导出"
         let toggle = UIBarButtonItem(
             image: UIImage(systemName: "character.bubble"),
             style: .plain, target: self, action: #selector(toggleTranslate))
@@ -344,8 +379,88 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
         cheat.accessibilityLabel = "作弊器"
-        toolbarItems = [reload, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
+        toolbarItems = [reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
+    }
+
+    /// 存档目录：Documents/Saves/<游戏名>/ —— 文件 App 可直接访问（UIFileSharingEnabled）
+    private var savesDir: URL {
+        let name = SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Saves", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    @objc private func saveMenu() {
+        let alert = UIAlertController(title: "存档管理", message: "导出当前游戏存档为 JSON 文件，或用 JSON 文件恢复存档", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "导出存档", style: .default) { [weak self] _ in self?.exportSave() })
+        alert.addAction(UIAlertAction(title: "导入存档…", style: .default) { [weak self] _ in self?.importSave() })
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.barButtonItem = toolbarItems?.filter { $0.accessibilityLabel == "存档导入导出" }.first
+        }
+        present(alert, animated: true)
+    }
+
+    private func exportSave() {
+        webView.evaluateJavaScript("window.RPGSave.exportAll()") { [weak self] result, err in
+            guard let self = self else { return }
+            guard err == nil, let json = result as? String, !json.isEmpty else {
+                self.alert("导出失败", "游戏页面尚未就绪或没有可导出的存档。")
+                return
+            }
+            let df = DateFormatter()
+            df.dateFormat = "yyyyMMdd_HHmmss"
+            let file = self.savesDir.appendingPathComponent("save_\(df.string(from: Date())).json")
+            do {
+                try json.write(to: file, atomically: true, encoding: .utf8)
+                CrashReporter.log("save exported: \(file.lastPathComponent)")
+                self.alert("已导出", "\(file.lastPathComponent)\n\n打开「文件」App → 我的 iPhone → RPGPlayer → Saves → \(self.savesDir.lastPathComponent) 即可取走。")
+            } catch {
+                self.alert("导出失败", error.localizedDescription)
+            }
+        }
+    }
+
+    private func importSave() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json])
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard let url = urls.first else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let json = try? String(contentsOf: url, encoding: .utf8) else {
+            alert("导入失败", "无法读取所选文件。")
+            return
+        }
+        let b64 = Data(json.utf8).base64EncodedString()
+        webView.evaluateJavaScript("window.RPGSave.importBase64('\(b64)')") { [weak self] result, err in
+            guard let self = self else { return }
+            if let msg = result as? String {
+                CrashReporter.log("save import: \(msg)")
+                let ok = msg.hasPrefix("ok:")
+                self.alert(ok ? "导入成功" : "导入失败",
+                           ok ? "已恢复 \(msg.dropFirst(3)) 条存档记录，即将重新加载游戏。"
+                              : "导入出错：\(msg)")
+                if ok {
+                    self.webView.stopLoading()
+                    self.loadGame()
+                }
+            } else {
+                self.alert("导入失败", "游戏页面尚未就绪。")
+            }
+        }
+    }
+
+    private func alert(_ title: String, _ message: String) {
+        let a = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
     }
 
     @objc private func toggleCheat() {
