@@ -281,7 +281,8 @@ final class TranslatorEngine {
 
     /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
     private func aquaLang(_ t: String) -> String {
-        let low = t.lowercased()
+        // 空值一律按中文处理（用户以中文为目标语言），绝不回退英文
+        let low = t.isEmpty ? "zh-cn" : t.lowercased()
         if low.hasPrefix("zh") { return "zh" }
         if low.hasPrefix("ja") { return "ja" }
         if low.hasPrefix("ko") { return "ko" }
@@ -289,7 +290,7 @@ final class TranslatorEngine {
         if low.hasPrefix("de") { return "de" }
         if low.hasPrefix("ru") { return "ru" }
         if low.hasPrefix("es") { return "es" }
-        return "en"
+        return "zh"
     }
 
     /// 自定义 API 响应解析：OpenAI 兼容 choices[0].message.content / translatedText / translation / data.translations / 纯文本
