@@ -601,20 +601,40 @@ extension GameListViewController: UIDocumentPickerDelegate {
         let fm = FileManager.default
         let docs = Self.documents
         var copied: [URL] = []
+        var skipped: [String] = []
         for url in urls {
-            guard url.pathExtension.lowercased() == "zip" else { continue }
+            guard url.pathExtension.lowercased() == "zip" else {
+                skipped.append("\(url.lastPathComponent)（不是 .zip）")
+                continue
+            }
+            // 系统文件选择器返回的安全作用域 URL：必须先 start 才能读取文件内容
+            let accessing = url.startAccessingSecurityScopedResource()
             let dest = docs.appendingPathComponent(url.lastPathComponent)
             do {
                 if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
                 try fm.copyItem(at: url, to: dest)
                 copied.append(dest)
-            } catch {}
+            } catch {
+                skipped.append("\(url.lastPathComponent)（复制失败：\(error.localizedDescription)）")
+            }
+            if accessing { url.stopAccessingSecurityScopedResource() }
         }
         guard !copied.isEmpty else {
-            let a = UIAlertController(title: "没有可导入的 zip", message: "请选择 .zip 压缩包。", preferredStyle: .alert)
+            let msg = skipped.isEmpty
+                ? "请选择 .zip 压缩包。"
+                : "未能导入：\n" + skipped.joined(separator: "\n") + "\n\n请确认选中的是 .zip 文件。"
+            let a = UIAlertController(title: "没有可导入的 zip", message: msg, preferredStyle: .alert)
             a.addAction(UIAlertAction(title: "好", style: .default))
             present(a, animated: true)
             return
+        }
+        if !skipped.isEmpty {
+            let a = UIAlertController(
+                title: "部分文件未导入",
+                message: skipped.joined(separator: "\n"),
+                preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
         }
         enqueueImports(copied)
     }
