@@ -35,6 +35,7 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "日志", style: .plain, target: self, action: #selector(showLog))
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.rowHeight = 64
         refreshGames()
         NotificationCenter.default.addObserver(
             self, selector: #selector(refreshGames),
@@ -100,6 +101,21 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
             return rel
         }
         return url.lastPathComponent
+    }
+
+    /// 游戏封面缩略图：查找 MV/MZ 的 icon.png（www/icon.png 或根目录 icon.png）
+    private func gameIcon(for url: URL) -> UIImage? {
+        let fm = FileManager.default
+        let candidates = [
+            url.appendingPathComponent("www").appendingPathComponent("icon.png"),
+            url.appendingPathComponent("icon.png")
+        ]
+        for c in candidates where fm.fileExists(atPath: c.path) {
+            if let img = UIImage(contentsOfFile: c.path) {
+                return img
+            }
+        }
+        return nil
     }
 
     @objc private func importGame() {
@@ -188,6 +204,14 @@ final class GamesViewController: UITableViewController, UIDocumentPickerDelegate
                 cell.detailTextLabel?.text = "已翻译 \(n) 条（播放时自动命中）"
             }
             cell.accessoryType = .disclosureIndicator
+            if let icon = gameIcon(for: url) {
+                cell.imageView?.image = icon
+                cell.imageView?.layer.cornerRadius = 6
+                cell.imageView?.layer.masksToBounds = true
+            } else {
+                cell.imageView?.image = UIImage(systemName: "gamecontroller")
+                cell.imageView?.tintColor = .systemOrange
+            }
         }
         return cell
     }

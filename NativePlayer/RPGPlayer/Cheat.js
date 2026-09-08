@@ -41,6 +41,62 @@
     toast("金钱 已改为 999999999");
   }
 
+  // 设置金钱（精确值，ArkRPG 同款）
+  function cheatSetGold() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    var input = prompt("设置金钱\n输入金额（如 999999）");
+    if (!input) return;
+    var v = parseInt(input, 10);
+    if (isNaN(v) || v < 0) { toast("格式错误，应为数字"); return; }
+    $gameParty._gold = v;
+    toast("金钱 = " + v);
+  }
+
+  // 经验 +10000
+  function cheatExp() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    $gameParty.members().forEach(function (a) {
+      if (a.isActor()) a.gainExp(10000);
+    });
+    toast("全员经验 +10000");
+  }
+
+  // 经验大幅增加（近似满级）
+  function cheatExpMax() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    $gameParty.members().forEach(function (a) {
+      if (a.isActor()) a.gainExp(99999999);
+    });
+    toast("全员经验大幅增加");
+  }
+
+  // 全技能学会
+  function cheatAllSkills() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    if (!window.$dataSkills) { toast("技能数据未就绪"); return; }
+    var n = 0;
+    $gameParty.members().forEach(function (a) {
+      if (!a.isActor()) return;
+      for (var i = 1; i < $dataSkills.length; i++) {
+        var sk = $dataSkills[i];
+        if (sk && sk.name && sk.name.length > 0 && !a.isSkillLearned(sk.id)) {
+          a.learnSkill(sk.id); n++;
+        }
+      }
+    });
+    toast("学会 " + n + " 个技能");
+  }
+
+  // 当前状态总览（金钱/等级/HP）
+  function cheatStatus() {
+    if (!ready()) { toast("未进入游戏"); return; }
+    var g = $gameParty.gold();
+    var ms = $gameParty.members().map(function (a) {
+      return a.name() + " Lv" + a.level + " " + a.hp + "/" + a.mhp;
+    }).join("，");
+    toast("金钱 " + g + "\n" + ms);
+  }
+
   function cheatHeal() {
     if (!ready()) { toast("未进入游戏"); return; }
     $gameParty.members().forEach(function (a) { a.recoverAll(); });
@@ -294,9 +350,14 @@
     var items = [
       ["金钱 +10000", cheatGold],
       ["金钱改满", cheatGoldMax],
+      ["设置金钱", cheatSetGold],
       ["全员恢复", cheatHeal],
       ["全员满级", cheatMaxLevel],
+      ["经验 +10000", cheatExp],
+      ["经验大幅增加", cheatExpMax],
+      ["全技能学会", cheatAllSkills],
       ["全道具/装备", cheatAllItems],
+      ["当前状态", cheatStatus],
       ["不遇敌 切换", toggleNoEncounter],
       ["无敌 切换", toggleInvincible],
       ["穿墙 切换", toggleThrough],
