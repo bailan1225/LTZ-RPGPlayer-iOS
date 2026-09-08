@@ -50,7 +50,11 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
             }
         }
         var index: [String: URL] = [:]
-        for rel in rels { index[rel.lowercased()] = root.appendingPathComponent(rel) }
+        for rel in rels {
+            // 用文件名（小写）做 key，与 resolve 的 url.lastPathComponent.lowercased() 匹配
+            let filename = (rel as NSString).lastPathComponent.lowercased()
+            index[filename] = root.appendingPathComponent(rel)
+        }
         fileIndex = index
     }
 

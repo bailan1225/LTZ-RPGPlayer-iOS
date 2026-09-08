@@ -30,9 +30,9 @@ enum GameImporter {
         if !html.contains("rpg-player-center-css") {
             let css = """
             <style id="rpg-player-center-css">
-            html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}
-            canvas{display:block;margin:0 auto;}
-            #ggs-page,#gameCanvas,#GameCanvas{width:100%!important;height:100%!important;}
+            html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;}
+            canvas{display:block;}
+            #GameCanvas,#ggs-page,#gameCanvas{display:flex;align-items:center;justify-content:center;width:100%;height:100%;}
             </style>
             """
             if let range = html.range(of: "</head>") {
