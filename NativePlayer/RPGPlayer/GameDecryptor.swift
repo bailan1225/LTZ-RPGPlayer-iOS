@@ -134,8 +134,13 @@ final class GameDecryptor {
     /// 关键：第一字节为 0 表示该文件未加密（16 字节全 0 头 + 原数据），只去头不做 XOR；
     /// 否则为 "RPGMV" 头 + XOR 加密数据。
     /// 加固：XOR 后验证魔数，若不是有效图片/音频格式，回退只去头（防止 key 读错导致全坏）。
+    /// 保证：永远不返回 nil——即使文件异常（≤16字节），也返回空数据，确保 .rpgmvp 被重命名为 .png，
+    ///       避免 hasEncryptedImages=false 后游戏请求 .png 却 404。
     static func decrypt(_ data: Data, key: [UInt8]) -> Data? {
-        guard data.count > 16 else { return nil }
+        guard data.count > 16 else {
+            // 文件异常小：返回空数据，调用方仍会重命名为 .png（避免 404）
+            return Data()
+        }
         let body = data.dropFirst(16)
         // 未加密文件（全 0 头）：只去头，保持原数据不变
         if data.first == 0 { return Data(body) }

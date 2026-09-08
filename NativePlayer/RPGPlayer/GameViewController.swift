@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private let root: URL
+    private let decryptKey: [UInt8]?
     /// 文件名(小写)→URL 索引：避免每次请求全目录扫描（游戏加载上千资源时 O(n²) 卡顿/白屏）
     private var fileIndex: [String: URL] = [:]
     private var indexBuilt = false
@@ -16,6 +17,7 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
 
     init(root: URL) {
         self.root = root.standardizedFileURL
+        self.decryptKey = GameDecryptor.loadKey(in: root)
         super.init()
         buildIndex()
     }
@@ -63,6 +65,22 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         return nil
     }
 
+    /// fallback：请求 .png/.ogg/.mp4 但文件还是 .rpgmvp/.rpgmvo/.rpgmvm（预解密遗漏），
+    /// 实时解密返回 Data。只在常规 resolve 失败后调用。
+    private func resolveEncryptedFallback(_ fileURL: URL) -> Data? {
+        guard let key = decryptKey else { return nil }
+        let extMap = ["png": "rpgmvp", "jpg": "rpgmvp", "jpeg": "rpgmvp", "gif": "rpgmvp", "webp": "rpgmvp",
+                      "ogg": "rpgmvo", "m4a": "rpgmvo", "mp3": "rpgmvo", "wav": "rpgmvo",
+                      "mp4": "rpgmvm", "webm": "rpgmvm"]
+        let ext = fileURL.pathExtension.lowercased()
+        guard let encExt = extMap[ext] else { return nil }
+        let encURL = fileURL.deletingPathExtension().appendingPathExtension(encExt)
+        guard FileManager.default.fileExists(atPath: encURL.path),
+              let data = try? Data(contentsOf: encURL),
+              let plain = GameDecryptor.decrypt(data, key: key) else { return nil }
+        return plain
+    }
+
     private func mimeType(_ ext: String) -> String {
         switch ext.lowercased() {
         case "html", "htm": return "text/html"
@@ -106,33 +124,43 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
         var isDir: ObjCBool = false
-        guard let resolved = resolve(fileURL),
-              FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) else {
+        if let resolved = resolve(fileURL),
+           FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) {
+            var finalURL = resolved
+            if isDir.boolValue {
+                guard let idx = resolve(resolved.appendingPathComponent("index.html")),
+                      FileManager.default.fileExists(atPath: idx.path) else {
+                    urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404, userInfo: nil))
+                    return
+                }
+                finalURL = idx
+            }
+            guard let data = try? Data(contentsOf: finalURL) else {
+                urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 500, userInfo: nil))
+                return
+            }
+            let mime = mimeType(finalURL.pathExtension)
+            let response = URLResponse(url: url, mimeType: mime,
+                                       expectedContentLength: data.count,
+                                       textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(data)
+            urlSchemeTask.didFinish()
+        } else if let decrypted = resolveEncryptedFallback(fileURL) {
+            // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
+            let mime = mimeType(fileURL.pathExtension)
+            let response = URLResponse(url: url, mimeType: mime,
+                                       expectedContentLength: decrypted.count,
+                                       textEncodingName: nil)
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didReceive(decrypted)
+            urlSchemeTask.didFinish()
+            CrashReporter.log("scheme decrypt-fallback: \(rel)")
+        } else {
             CrashReporter.log("scheme 404: \(rel)")
             urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404,
                                                    userInfo: [NSLocalizedDescriptionKey: "404 \(rel)"]))
-            return
         }
-        var finalURL = resolved
-        if isDir.boolValue {
-            guard let idx = resolve(resolved.appendingPathComponent("index.html")),
-                  FileManager.default.fileExists(atPath: idx.path) else {
-                urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404, userInfo: nil))
-                return
-            }
-            finalURL = idx
-        }
-        guard let data = try? Data(contentsOf: finalURL) else {
-            urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 500, userInfo: nil))
-            return
-        }
-        let mime = mimeType(finalURL.pathExtension)
-        let response = URLResponse(url: url, mimeType: mime,
-                                   expectedContentLength: data.count,
-                                   textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil)
-        urlSchemeTask.didReceive(response)
-        urlSchemeTask.didReceive(data)
-        urlSchemeTask.didFinish()
     }
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
@@ -190,12 +218,17 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         forceOrientation(.landscapeLeft)
+        // 横屏游戏：隐藏导航栏（返回按钮+标题占空间），点击游戏区域可呼出工具栏
+        navigationController?.setNavigationBarHidden(true, animated: false)
+        navigationController?.hidesBarsOnTap = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         UIApplication.shared.isIdleTimerDisabled = false
         webView?.stopLoading()
+        navigationController?.hidesBarsOnTap = false
+        navigationController?.setNavigationBarHidden(false, animated: false)
         forceOrientation(.portrait)
     }
 
@@ -364,6 +397,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func setupToolbar() {
+        let back = UIBarButtonItem(
+            title: "✕", style: .plain, target: self, action: #selector(backToList))
+        back.accessibilityLabel = "返回游戏列表"
         let reload = UIBarButtonItem(barButtonSystemItem: .refresh, target: self, action: #selector(reload))
         let save = UIBarButtonItem(
             image: UIImage(systemName: "externaldrive"),
@@ -379,8 +415,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             style: .plain, target: self, action: #selector(toggleCheat))
         cheat.tintColor = .systemOrange
         cheat.accessibilityLabel = "作弊器"
-        toolbarItems = [reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
+        // 横屏紧凑布局：返回 + 刷新 + 存档 + 作弊 + 翻译
+        toolbarItems = [back, .flexibleSpace(), reload, .flexibleSpace(), save, .flexibleSpace(), cheat, .flexibleSpace(), toggle]
         navigationController?.setToolbarHidden(false, animated: false)
+    }
+
+    @objc private func backToList() {
+        navigationController?.popViewController(animated: true)
     }
 
     /// 存档目录：Documents/Saves/<游戏名>/ —— 文件 App 可直接访问（UIFileSharingEnabled）
