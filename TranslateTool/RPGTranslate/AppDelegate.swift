@@ -18,7 +18,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             "tr_mem_email": "",
             "tr_enabled": true,
             "tr_cache_version": 0,
-            "tr_prompt": ""
+            "tr_prompt": "",
+            "tr_concurrency": 0
         ])
         createFirstRunStructure()
 

@@ -461,7 +461,18 @@ final class DataTranslator {
         let ovr = overrides()
         var mapping: [String: String] = ovr
         let total = unique.count
-        let semaphore = DispatchSemaphore(value: 6)   // 6 路并发（AQUA/Agnes 免费通道可承受）
+        // 并发：设置页可调（tr_concurrency：0=自动按引擎，1~16 手动）；调高更快，但免费通道限流严格时易 429/失败
+        let presetConc = UserDefaults.standard.integer(forKey: "tr_concurrency")
+        let autoConc: Int
+        switch config.engine {
+        case .offline: autoConc = 1
+        case .mymemory: autoConc = 2   // MyMemory 免费接口限流严格
+        case .custom: autoConc = 6
+        case .agnes: autoConc = 8
+        case .aqua: autoConc = 6       // AQUA 免费通道限流，过高触发 RATE_LIMITED
+        }
+        let concurrency = presetConc > 0 ? max(1, min(16, presetConc)) : autoConc
+        let semaphore = DispatchSemaphore(value: concurrency)
         let resultQueue = DispatchQueue(label: "rpgtranslate.results")  // mapping 写入串行化
         let group = DispatchGroup()
         let workQueue = DispatchQueue.global(qos: .userInitiated)       // 提交/写回后台执行，不卡 UI

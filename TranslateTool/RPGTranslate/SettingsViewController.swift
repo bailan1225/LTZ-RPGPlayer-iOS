@@ -152,7 +152,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 0: return engineControl?.selectedSegmentIndex == 1 ? 3 : 2   // MyMemory 才显示邮箱行
         case 1: return 2
         case 2: return apiRows()
-        case 3: return 2
+        case 3: return 3
         case 4: return 0
         default: return 0
         }
@@ -180,7 +180,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             case 4: return "API 设置（当前：AQUA，只需填 API Key）"
             default: return "API 设置（当前：自定义API）"
             }
-        case 3: return ""
+        case 3: return "翻译性能"
         default: return nil
         }
     }
@@ -197,8 +197,15 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         }
     }
 
+    private func concurrencyLabel() -> String {
+        let v = defaults.integer(forKey: "tr_concurrency")
+        return v == 0 ? "自动（按引擎）" : "\(v) 路"
+    }
+
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+        let cell = (indexPath.section == 3 && indexPath.row == 0)
+            ? UITableViewCell(style: .value1, reuseIdentifier: nil)
+            : UITableViewCell(style: .default, reuseIdentifier: nil)
         cell.selectionStyle = .none
         switch (indexPath.section, indexPath.row) {
         case (0, 0):
@@ -255,10 +262,16 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
                 break
             }
         case (3, 0):
+            cell.textLabel?.text = "翻译并发数"
+            cell.detailTextLabel?.text = concurrencyLabel()
+            cell.textLabel?.textColor = .label
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+        case (3, 1):
             cell.textLabel?.text = "清除翻译缓存"
             cell.textLabel?.textColor = .systemRed
             cell.accessoryType = .none
-        case (3, 1):
+        case (3, 2):
             cell.textLabel?.text = "崩溃日志"
             cell.textLabel?.textColor = .systemBlue
             cell.accessoryType = .none
@@ -278,6 +291,24 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         }
         guard indexPath.section == 3 else { return }
         if indexPath.row == 0 {
+            let sheet = UIAlertController(
+                title: "翻译并发数",
+                message: "同时发起的翻译请求数。调高更快，但免费通道/MyMemory 限流严格时易报错；遇到失败变多就调低。\n\n自动 = 按引擎推荐（离线 1 / MyMemory 2 / AQUA·自定义 6 / Agnes 8）。",
+                preferredStyle: .actionSheet)
+            let options: [(String, Int)] = [("自动（按引擎）", 0), ("2 路", 2), ("4 路", 4), ("6 路", 6), ("8 路", 8), ("12 路", 12), ("16 路", 16)]
+            for (title, v) in options {
+                sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                    self?.defaults.set(v, forKey: "tr_concurrency")
+                    self?.tableView.reloadData()
+                })
+            }
+            sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+            if let pop = sheet.popoverPresentationController {
+                pop.sourceView = view
+                pop.sourceRect = view.bounds
+            }
+            present(sheet, animated: true)
+        } else if indexPath.row == 1 {
             let fm = FileManager.default
             let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let cacheDir = docs.appendingPathComponent("transCache", isDirectory: true)
