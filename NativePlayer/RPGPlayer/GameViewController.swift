@@ -300,6 +300,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private var pageLoaded = false
     private var schemeHandler: GameSchemeHandler?
     private var floatingBall: FloatingBallView?
+    private var virtualGamepad: VirtualGamepad?
+    private var gamepadVisible = true
 
     init(gameDir: URL) {
         self.gameDir = gameDir
@@ -634,6 +636,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        // 虚拟手柄（方向键 + A/B）
+        let pad = VirtualGamepad(webView: webView)
+        pad.frame = view.bounds
+        pad.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(pad)
+        virtualGamepad = pad
         showLoading("正在加载游戏…")
     }
 
@@ -708,6 +716,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         alert.addAction(UIAlertAction(title: "↻ 刷新游戏", style: .default) { [weak self] _ in self?.reload() })
         alert.addAction(UIAlertAction(title: trOn ? "💬 翻译：开（点此关闭）" : "💬 翻译：关（点此开启）", style: .default) { [weak self] _ in
             self?.toggleTranslate()
+        })
+        alert.addAction(UIAlertAction(title: self.gamepadVisible ? "🎮 手柄：开（点此关闭）" : "🎮 手柄：关（点此开启）", style: .default) { [weak self] _ in
+            self?.toggleGamepad()
         })
         // 更多选项
         alert.addAction(UIAlertAction(title: "⋯ 更多（存档/作弊）", style: .default) { [weak self] _ in
@@ -853,6 +864,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     @objc private func toggleCheat() {
         webView.evaluateJavaScript("window.RPGCheat && window.RPGCheat.toggle();") { _, _ in }
+    }
+
+    @objc private func toggleGamepad() {
+        gamepadVisible.toggle()
+        virtualGamepad?.isHidden = !gamepadVisible
     }
 
     @objc private func reload() {
