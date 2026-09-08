@@ -24,9 +24,14 @@ enum CrashReporter {
         log("SIGNAL \(sig) app crashed")
     }
 
-    /// 追加业务日志（JS 加载失败、游戏错误等，用于排障）
+    /// 追加业务日志（JS 加载失败、游戏错误等，用于排障）；超过 256KB 自动清空重写，避免无限增长
     static func log(_ text: String) {
-        guard let handle = try? FileHandle(forWritingTo: logURL) else {
+        let url = logURL
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = (attrs[.size] as? NSNumber)?.intValue, size > 256 * 1024 {
+            try? FileManager.default.removeItem(at: url)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else {
             try? text.write(to: logURL, atomically: true, encoding: .utf8)
             return
         }
