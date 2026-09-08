@@ -134,6 +134,7 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        let startTime = Date()
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: -1, userInfo: nil))
             return
@@ -141,6 +142,13 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         var path = url.path
         if path.isEmpty || path == "/" { path = "/index.html" }
         let rel = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        // 慢资源日志：超过 500ms 的本地文件读取会记录（定位 The operation was aborted）
+        defer {
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > 0.5 {
+                CrashReporter.log(String(format: "scheme slow: %.2fs %@", elapsed, rel))
+            }
+        }
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
         // 目录穿越防护：只允许 root 范围内
         let rootPath = root.path
@@ -446,14 +454,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         view.addSubview(ball)
         floatingBall = ball
 
-        // 恢复上次位置（每游戏独立）
+        // 恢复上次位置（每游戏独立），默认屏幕中间偏右（更醒目）
         let key = "ballPos_\(SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent)"
         if let arr = defaults.array(forKey: key) as? [CGFloat], arr.count == 2 {
             ball.center = CGPoint(x: arr[0], y: arr[1])
         } else {
-            // 默认右下角
-            ball.center = CGPoint(x: view.bounds.width - 40, y: view.bounds.height - 120)
+            ball.center = CGPoint(x: view.bounds.midX + 80, y: view.bounds.midY)
         }
+        updateBallAppearance()
     }
 
     private func showBallMenu() {
@@ -496,6 +504,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             defaults.set([ball.center.x, ball.center.y], forKey: key)
         }
         navigationController?.popViewController(animated: true)
+    }
+
+    /// 根据翻译状态更新悬浮球外观（翻译开=蓝色，关=橙色）
+    private func updateBallAppearance() {
+        guard let ball = floatingBall else { return }
+        let trOn = defaults.bool(forKey: "tr_enabled")
+        ball.backgroundColor = (trOn ? UIColor.systemBlue : UIColor.systemOrange).withAlphaComponent(0.88)
+        ball.setImage(UIImage(systemName: trOn ? "character.bubble.fill" : "gamecontroller.fill"), for: .normal)
     }
 
     /// 存档目录：Documents/Saves/<游戏名>/ —— 文件 App 可直接访问（UIFileSharingEnabled）
@@ -590,7 +606,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     @objc private func toggleTranslate() {
         let newValue = !defaults.bool(forKey: "tr_enabled")
         defaults.set(newValue, forKey: "tr_enabled")
-        toolbarItems?.last?.tintColor = newValue ? .systemBlue : .secondaryLabel
+        updateBallAppearance()
         webView.evaluateJavaScript("window.RPGTranslator && window.RPGTranslator.setEnabled(\(newValue));") { _, _ in }
         if newValue {
             webView.evaluateJavaScript("window.RPGTranslator && window.RPGTranslator.resetSession();") { _, _ in }
