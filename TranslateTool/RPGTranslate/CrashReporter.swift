@@ -17,11 +17,16 @@ enum CrashReporter {
         signal(SIGABRT) { sig in CrashReporter.writeSignal(sig) }
         signal(SIGSEGV) { sig in CrashReporter.writeSignal(sig) }
         signal(SIGBUS) { sig in CrashReporter.writeSignal(sig) }
-        signal(SIGTRAP) { sig in CrashReporter.writeSignal(sig) }
+        // SIGTRAP(5)：iOS 上系统框架 / JS 引擎可能非致命触发（handler 返回后进程继续运行），
+        // 保留空 handler 防止默认行为直接终止 App，但不写日志，避免 crash.log 刷屏。
+        signal(SIGTRAP) { _ in }
     }
 
     private static func writeSignal(_ sig: Int32) {
         log("SIGNAL \(sig) app crashed")
+        // 恢复默认并重新触发，保证真崩溃按系统方式正常终止（避免 handler 返回后继续运行坏状态）
+        signal(sig, SIG_DFL)
+        raise(sig)
     }
 
     /// 追加业务日志（JS 加载失败、游戏错误等，用于排障）；超过 256KB 自动清空重写，避免无限增长
