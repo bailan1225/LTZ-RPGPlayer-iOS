@@ -443,9 +443,21 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
               });
               window.addEventListener("unhandledrejection", function (e) {
                 try {
-                  window.webkit.messageHandlers.rpgConsole.postMessage("rejection: " + ((e.reason && e.reason.message) || String(e.reason)));
+                  var reason = e.reason;
+                  var msg = (reason && reason.message) || String(reason);
+                  var stack = (reason && reason.stack) ? ("\\nSTACK: " + reason.stack.substring(0, 500)) : "";
+                  window.webkit.messageHandlers.rpgConsole.postMessage("rejection: " + msg + stack);
                 } catch (err) {}
               });
+              // 监控资源加载错误
+              document.addEventListener("error", function (e) {
+                try {
+                  var t = e.target;
+                  if (t && (t.tagName === "IMG" || t.tagName === "AUDIO" || t.tagName === "VIDEO" || t.tagName === "SCRIPT")) {
+                    window.webkit.messageHandlers.rpgConsole.postMessage("resource-error: " + t.tagName + " src=" + (t.src || t.currentSrc || "?"));
+                  }
+                } catch (err) {}
+              }, true);
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -761,6 +773,17 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         hideLoading()
         loadingDeadline?.cancel()
+        CrashReporter.log("page didFinish navigation")
+    }
+
+    /// WebContent 进程被终止（通常是内存不足）
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        CrashReporter.log("WEB CONTENT PROCESS TERMINATED (likely OOM)")
+    }
+
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        CrashReporter.log("didReceiveMemoryWarning")
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
