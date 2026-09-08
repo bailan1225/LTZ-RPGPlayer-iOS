@@ -223,7 +223,7 @@ final class GamesViewController: UITableViewController {
                 GameImporter.fixViewport(in: final)
                 ok = true
                 finalPath = final.path
-                result = "导入成功：\(final.lastPathComponent)\n共解压 \(n) 个文件\(fixMsg)"
+                result = "导入成功：\(final.lastPathComponent)\n共解压 \(n) 个文件\n加密资源将由游戏自动解密"
             } catch {
                 result = "导入失败：\(error.localizedDescription)"
             }
