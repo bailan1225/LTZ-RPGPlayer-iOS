@@ -7,16 +7,24 @@ final class GameListViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "RPG 翻译器"
+        title = "游戏"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add, target: self, action: #selector(importGame))
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "翻译文件", style: .plain, target: self, action: #selector(openTranslationFiles))
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.register(SubtitleCell.self, forCellReuseIdentifier: "cell")
         refresh()
         NotificationCenter.default.addObserver(
             self, selector: #selector(refresh),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    /// subtitle 风格 cell（显示"已翻译 N 条"）
+    private final class SubtitleCell: UITableViewCell {
+        override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+            super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
+        }
+        required init?(coder: NSCoder) { fatalError() }
     }
 
     @objc private func openTranslationFiles() {
@@ -68,8 +76,11 @@ final class GameListViewController: UITableViewController {
             cell.textLabel?.textColor = .secondaryLabel
             cell.accessoryType = .none
         } else {
-            cell.textLabel?.text = displayName(for: games[indexPath.row])
+            let info = games[indexPath.row]
+            cell.textLabel?.text = displayName(for: info)
             cell.textLabel?.textColor = .label
+            let n = DataTranslator.savedMapping(for: info).count
+            cell.detailTextLabel?.text = n > 0 ? "已翻译 \(n) 条（播放时自动命中）" : "未翻译 · 可直接播放（词典自动命中）"
             cell.accessoryType = .disclosureIndicator
         }
         return cell
@@ -101,6 +112,6 @@ final class GameListViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "把含 www/data（或 data）的游戏文件夹放入 RPG 翻译器的文稿目录（文件App / 爱思助手直拖），自动识别 MV/MZ。翻译后导出整份游戏，放入「RPG Player」即可玩到中文版。"
+        "把含 www/data（或 data）的游戏文件夹放入本 App 的文稿目录（文件App / 爱思助手直拖），自动识别 MV/MZ。\n\n游戏、词典、翻译、存档全部在本 App 内共用：翻译完直接点「播放」即可玩到中文版，无需导出转移。游戏运行页为横屏。"
     }
 }

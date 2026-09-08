@@ -1,12 +1,9 @@
 name: Build native RPGPlayer IPA (unsigned)
 
 on:
+  # 独立播放器已并入「RPG 翻译器」（游戏/翻译/设置三 Tab，共用 Documents）。
+  # 此 workflow 仅保留手动触发，供需要单独 Player 包时使用。
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'NativePlayer/**'
-      - '.github/workflows/build-native-ipa.yml'
 
 concurrency:
   group: build-native-ipa
