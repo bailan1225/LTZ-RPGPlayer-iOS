@@ -1,17 +1,40 @@
 import UIKit
 
-/// 游戏列表：识别 Documents 下所有含 data/System.json 的 MV/MZ 游戏
+/// 单页版：上半游戏列表，下半选中游戏的翻译操作（合并原列表页与翻译页，去掉冗余跳转）
 final class GameListViewController: UITableViewController {
 
     private var games: [GameInfo] = []
+    private var selectedIndex: Int?
+    private let defaults = UserDefaults.standard
+
+    private var stats: ScanStats?
+    private var summary: TranslateSummary?
+    private var isRunning = false
+    private var cancelFlag = false
+    private var scanTask: DispatchWorkItem?
+
+    private lazy var progressView: UIProgressView = {
+        let p = UIProgressView(progressViewStyle: .default)
+        p.progress = 0
+        return p
+    }()
+    private var phaseLabel = UILabel()
+
+    private static var documents: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "游戏"
+        title = "游戏翻译"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add, target: self, action: #selector(importGame))
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "翻译文件", style: .plain, target: self, action: #selector(openTranslationFiles))
+        phaseLabel.numberOfLines = 0
+        phaseLabel.font = .systemFont(ofSize: 13)
+        phaseLabel.textColor = .secondaryLabel
+        phaseLabel.text = " "
         tableView.register(SubtitleCell.self, forCellReuseIdentifier: "cell")
         refresh()
         NotificationCenter.default.addObserver(
@@ -19,7 +42,6 @@ final class GameListViewController: UITableViewController {
             name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
-    /// subtitle 风格 cell（显示"已翻译 N 条"）
     private final class SubtitleCell: UITableViewCell {
         override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
             super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
@@ -31,12 +53,9 @@ final class GameListViewController: UITableViewController {
         navigationController?.pushViewController(TranslationFilesViewController(), animated: true)
     }
 
-    private static var documents: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    }
-
     @objc private func refresh() {
         games = DataTranslator.findGames(in: Self.documents)
+        if let i = selectedIndex, i >= games.count { selectedIndex = nil }
         tableView.reloadData()
         checkPendingZips()
     }
@@ -50,8 +69,13 @@ final class GameListViewController: UITableViewController {
         return info.root.lastPathComponent
     }
 
-    /// iOS 17 侧载环境下系统文件夹选择器会闪退，这里不直接弹选择器，
-    /// 改为导入指南 + 刷新（文件App / 爱思助手直拖是最稳妥的导入方式）
+    private var selectedGame: GameInfo? {
+        guard let i = selectedIndex, i < games.count else { return nil }
+        return games[i]
+    }
+
+    // MARK: - 导入
+
     @objc private func importGame() {
         let sheet = UIAlertController(title: "导入游戏", message: nil, preferredStyle: .actionSheet)
         sheet.addAction(UIAlertAction(title: "解压导入（zip 放进本 App 文档目录后在此选择）", style: .default) { [weak self] _ in
@@ -152,37 +176,345 @@ final class GameListViewController: UITableViewController {
         present(ask, animated: true)
     }
 
+    // MARK: - 翻译操作
+
+    private func config() -> TranslationConfig {
+        var c = TranslationConfig()
+        c.engine = TranslationEngine(rawValue: defaults.integer(forKey: "tr_engine")) ?? .offline
+        c.source = defaults.string(forKey: "tr_source") ?? "ja"
+        c.target = defaults.string(forKey: "tr_target") ?? "zh-CN"
+        c.apiUrl = defaults.string(forKey: "tr_api_url") ?? ""
+        c.apiKey = defaults.string(forKey: "tr_api_key") ?? ""
+        c.prompt = defaults.string(forKey: "tr_prompt") ?? ""
+        c.model = defaults.string(forKey: "tr_model") ?? ""
+        c.memEmail = defaults.string(forKey: "tr_mem_email") ?? ""
+        return c
+    }
+
+    private func engineName(_ e: TranslationEngine) -> String {
+        switch e {
+        case .offline: return "离线词典"
+        case .mymemory: return "MyMemory"
+        case .custom: return "自定义API"
+        case .agnes: return "Agnes"
+        case .aqua: return "AQUA"
+        }
+    }
+
+    private func startTranslate() {
+        guard !isRunning, let game = selectedGame else { return }
+        let cfg = config()
+        isRunning = true
+        cancelFlag = false
+        _ = DataTranslator.backupData(game)
+        phaseLabel.text = "使用 \(engineName(cfg.engine)) 准备中…"
+        progressView.progress = 0
+        tableView.reloadData()
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            DataTranslator.run(game: game, config: cfg,
+                               progress: { p in
+                DispatchQueue.main.async {
+                    self.phaseLabel.text = p.phase + (p.total > 0 ? " \(p.done)/\(p.total)" : "")
+                    if p.total > 0 { self.progressView.progress = Float(p.done) / Float(p.total) }
+                }
+            }, cancelled: { self.cancelFlag },
+               completion: { sum in
+                DispatchQueue.main.async {
+                    self.isRunning = false
+                    self.summary = sum
+                    self.phaseLabel.text = sum.refsTotal == 0 && sum.translatedUnique == 0
+                        ? "未找到可翻译文本（检查游戏是否为 MV/MZ 且 data 完整）"
+                        : "完成：翻译 \(sum.translatedUnique) 条，写回 \(sum.refsChanged) 处 / \(sum.filesChanged) 个文件"
+                    self.progressView.progress = 1
+                    self.tableView.reloadData()
+                    if sum.failedUnique > 0 && sum.failedUnique > sum.translatedUnique {
+                        let detail = sum.lastError.isEmpty
+                            ? "\n\n常见原因：Key 未填/无效、免费额度用尽、模型名不支持、网络不通。检查设置后重新翻译（已成功的不会重复翻）。"
+                            : "\n\nAPI 返回：\(sum.lastError)"
+                        let alert = UIAlertController(
+                            title: "翻译失败较多（\(sum.failedUnique) 条）",
+                            message: "可能原因：\n① 引擎 Key 未填或无效\n② 自定义 API 地址未以 /chat/completions 结尾\n③ 免费额度用尽\n④ 模型名不支持（Agnes 默认 agnes-2.5-flash / AQUA 默认 glm-4-flash）\(detail)",
+                            preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "好", style: .default))
+                        self.present(alert, animated: true)
+                    }
+                }
+            })
+        }
+    }
+
+    private func stopTranslate() {
+        cancelFlag = true
+        isRunning = false
+        phaseLabel.text = "已取消"
+        tableView.reloadData()
+    }
+
+    /// 把翻译后的游戏整包导出为 zip 到 Documents/Exports，供 RPG Pocket / QuestPlay / RPGEmu 等第三方 Player 导入运行
+    private func exportGame() {
+        guard let game = selectedGame else { return }
+        let progress = UIAlertController(
+            title: "正在打包…",
+            message: "大游戏可能需要一会儿，请勿关闭 App",
+            preferredStyle: .alert)
+        present(progress, animated: true)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var result = ""
+            var ok = false
+            do {
+                let docs = Self.documents
+                let exportDir = docs.appendingPathComponent("Exports", isDirectory: true)
+                try FileManager.default.createDirectory(at: exportDir, withIntermediateDirectories: true)
+                // 导出前修复多语言插件名（日文/中文 js），保证第三方 Player 能正常加载插件
+                GameDetector.fixPluginAliases(in: game.root)
+                let items = ZipWriter.collectFiles(in: game.root)
+                guard !items.isEmpty else { throw ZipWriter.ZipWriterError.cannotCreate }
+                let zipURL = exportDir.appendingPathComponent("\(game.root.lastPathComponent).zip")
+                try ZipWriter.createStoredZip(items: items, to: zipURL)
+                ok = true
+                result = "已导出：\(zipURL.lastPathComponent)（\(items.count) 个文件）\n\n用法：\n1. 用「文件」App → 我的 iPhone → RPG 翻译器 → Exports\n2. 长按 zip →「共享」→ 选择 RPG Pocket / QuestPlay / RPGEmu 导入\n3. 导入后即可运行中文版"
+            } catch {
+                result = "导出失败：\(error.localizedDescription)"
+            }
+            DispatchQueue.main.async {
+                self?.dismiss(animated: true) {
+                    let done = UIAlertController(
+                        title: ok ? "导出完成" : "导出失败",
+                        message: result,
+                        preferredStyle: .alert)
+                    done.addAction(UIAlertAction(title: "好", style: .default))
+                    self?.present(done, animated: true)
+                }
+            }
+        }
+    }
+
+    private func restore() {
+        guard let game = selectedGame else { return }
+        let backups = DataTranslator.backups(for: game)
+        guard !backups.isEmpty else {
+            let a = UIAlertController(title: "没有备份", message: "开始翻译时会自动备份原 data，翻译后可一键还原。", preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        let sheet = UIAlertController(title: "恢复原版 data", message: "选择备份时间点（翻译前的 data 快照）", preferredStyle: .actionSheet)
+        for b in backups {
+            let name = b.lastPathComponent.replacingOccurrences(of: "data_", with: "")
+            sheet.addAction(UIAlertAction(title: name, style: .default) { [weak self] _ in
+                guard let self = self else { return }
+                let ok = DataTranslator.restoreData(game, from: b)
+                let msg = ok ? "已还原，重新扫描即可。" : "还原失败。"
+                let a = UIAlertController(title: ok ? "已还原" : "失败", message: msg, preferredStyle: .alert)
+                a.addAction(UIAlertAction(title: "好", style: .default))
+                self.present(a, animated: true)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func applyTranslationFile() {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("translations", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let files = ((try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !files.isEmpty else {
+            let a = UIAlertController(
+                title: "没有翻译文件",
+                message: "用文件App把 mtool 或其他工具导出的 JSON 翻译文件（{原文: 译文} 格式）放入：\n\n文件App → 我的 iPhone → RPG 翻译器 → translations 文件夹\n\n放好后重新点此项选择文件应用。\n\n提示：命名为 override.json 的词典会在翻译时自动优先命中（精修/术语一致）。",
+                preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        let sheet = UIAlertController(title: "应用翻译文件", message: "选择 translations 里的 JSON（应用前自动备份 data）", preferredStyle: .actionSheet)
+        for f in files {
+            sheet.addAction(UIAlertAction(title: f.lastPathComponent, style: .default) { [weak self] _ in
+                guard let self = self else { return }
+                self.applyFile(f)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+        if let pop = sheet.popoverPresentationController {
+            pop.sourceView = view
+            pop.sourceRect = view.bounds
+        }
+        present(sheet, animated: true)
+    }
+
+    private func applyFile(_ url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              !obj.isEmpty else {
+            let a = UIAlertController(title: "格式不正确", message: "翻译文件需要是 {原文: 译文} 的 JSON 对象。", preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        guard let game = selectedGame else { return }
+        let backed = DataTranslator.backupData(game) != nil
+        let r = DataTranslator.applyMapping(obj, to: game)
+        let msg = "应用完成：写回 \(r.refs) 处 / \(r.files) 个文件"
+            + (backed ? "（已自动备份原 data）" : "（备份失败，请手动备份）")
+        let a = UIAlertController(title: "完成", message: msg, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
+    }
+
+    private func refreshStats() {
+        guard let i = selectedIndex, i < games.count else { return }
+        scanTask?.cancel()
+        let w = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            let s = DataTranslator.scanStats(self.games[i])
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self, !(self.scanTask?.isCancelled ?? true) else { return }
+                self.stats = s
+                self.tableView.reloadData()
+            }
+        }
+        scanTask = w
+        DispatchQueue.global(qos: .userInitiated).async(execute: w)
+    }
+
     // MARK: - Table
 
+    override func numberOfSections(in tableView: UITableView) -> Int { 2 }
+
+    override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        section == 0 ? "游戏" : "操作"
+    }
+
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        max(games.count, 1)
+        if section == 0 { return max(games.count, 1) }
+        return selectedGame == nil ? 1 : 9
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
-        if games.isEmpty {
-            cell.textLabel?.text = "还没有游戏"
+        if indexPath.section == 0 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+            if games.isEmpty {
+                cell.textLabel?.text = "还没有游戏（点右上角 + 导入）"
+                cell.textLabel?.textColor = .secondaryLabel
+                cell.accessoryType = .none
+            } else {
+                let info = games[indexPath.row]
+                cell.textLabel?.text = displayName(for: info)
+                cell.textLabel?.textColor = .label
+                let n = DataTranslator.savedMapping(for: info).count
+                cell.detailTextLabel?.text = n > 0 ? "已翻译 \(n) 条" : "未翻译"
+                cell.accessoryType = indexPath.row == selectedIndex ? .checkmark : .none
+            }
+            return cell
+        }
+        guard let game = selectedGame else {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.textLabel?.text = "请先选择上方游戏"
             cell.textLabel?.textColor = .secondaryLabel
-            cell.accessoryType = .none
-        } else {
-            let info = games[indexPath.row]
-            cell.textLabel?.text = displayName(for: info)
-            cell.textLabel?.textColor = .label
-            let n = DataTranslator.savedMapping(for: info).count
-            cell.detailTextLabel?.text = n > 0 ? "已翻译 \(n) 条（播放时自动命中）" : "未翻译 · 可直接播放（词典自动命中）"
-            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .none
+            return cell
+        }
+        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
+        cell.selectionStyle = .none
+        switch indexPath.row {
+        case 0:
+            cell.textLabel?.text = "数据文件"
+            cell.detailTextLabel?.text = stats.map { "\($0.fileCount) 个" } ?? "扫描中…"
+        case 1:
+            cell.textLabel?.text = "文本位置"
+            cell.detailTextLabel?.text = stats.map { "\($0.refCount) 处" } ?? "…"
+        case 2:
+            cell.textLabel?.text = "待翻译条目（去重）"
+            cell.detailTextLabel?.text = stats.map { "\($0.uniqueCount) 条" } ?? "…"
+        case 3:
+            cell.textLabel?.text = isRunning ? "取消翻译" : "开始翻译"
+            cell.textLabel?.textColor = isRunning ? .systemRed : .systemBlue
+            cell.selectionStyle = .default
+        case 4:
+            cell.contentView.addSubview(progressView)
+            cell.contentView.addSubview(phaseLabel)
+            progressView.translatesAutoresizingMaskIntoConstraints = false
+            phaseLabel.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                progressView.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                progressView.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                progressView.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 14),
+                phaseLabel.leadingAnchor.constraint(equalTo: cell.contentView.leadingAnchor, constant: 16),
+                phaseLabel.trailingAnchor.constraint(equalTo: cell.contentView.trailingAnchor, constant: -16),
+                phaseLabel.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 8),
+                phaseLabel.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -12)
+            ])
+        case 5:
+            cell.textLabel?.text = "校对译文（手动精修）"
+            cell.textLabel?.textColor = .systemIndigo
+            cell.selectionStyle = .default
+        case 6:
+            cell.textLabel?.text = "应用翻译文件（mtool/JSON）"
+            cell.textLabel?.textColor = .systemBlue
+            cell.selectionStyle = .default
+        case 7:
+            cell.textLabel?.text = "导出翻译后的游戏（zip，供第三方 Player）"
+            cell.textLabel?.textColor = .systemGreen
+            cell.selectionStyle = .default
+        case 8:
+            cell.textLabel?.text = "恢复原版 data"
+            cell.textLabel?.textColor = .systemOrange
+            cell.selectionStyle = .default
+        default:
+            break
         }
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard !games.isEmpty else { return }
-        let info = games[indexPath.row]
-        navigationController?.pushViewController(TranslateViewController(game: info), animated: true)
+        if indexPath.section == 0 {
+            guard indexPath.row < games.count else { return }
+            selectedIndex = indexPath.row
+            stats = nil
+            summary = nil
+            isRunning = false
+            cancelFlag = false
+            phaseLabel.text = " "
+            progressView.progress = 0
+            tableView.reloadData()
+            refreshStats()
+            return
+        }
+        guard selectedGame != nil else { return }
+        switch indexPath.row {
+        case 3:
+            isRunning ? stopTranslate() : startTranslate()
+        case 5:
+            guard let game = selectedGame else { return }
+            let vc = ReviewViewController(game: game)
+            let nav = UINavigationController(rootViewController: vc)
+            nav.modalPresentationStyle = .fullScreen
+            present(nav, animated: true)
+        case 6:
+            applyTranslationFile()
+        case 7:
+            exportGame()
+        case 8:
+            restore()
+        default:
+            break
+        }
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "把含 www/data（或 data）的游戏文件夹或 zip 压缩包放入本 App 的文稿目录，自动识别 MV/MZ。\n\n翻译完可点「导出翻译后的游戏（zip）」交给第三方 Player（RPG Pocket / QuestPlay / RPGEmu）运行，或直接点「播放游戏」使用内置播放器（横屏）。"
+        section == 0
+            ? "把含 www/data（或 data）的游戏文件夹或 zip 压缩包放入本 App 的文稿目录，自动识别 MV/MZ。\n\n翻译完点「导出翻译后的游戏（zip）」交给第三方 Player（RPG Pocket / QuestPlay / RPGEmu）运行。"
+            : nil
     }
 }
