@@ -218,9 +218,17 @@ final class GamesViewController: UITableViewController {
                     try FileManager.default.moveItem(at: dest, to: final)
                 }
                 try? FileManager.default.removeItem(at: zip)
+                // 自动修复格式：解密加密资源（运行时零开销）
+                var fixMsg = ""
+                if GameDecryptor.needsDecryption(in: final) {
+                    let r = GameDecryptor.decryptIfNeeded(in: final)
+                    if r.ok && r.files > 0 { fixMsg = "\n已自动解密 \(r.files) 个加密文件" }
+                }
+                // 自动修复：注入 viewport（横屏居中显示）
+                GameImporter.fixViewport(in: final)
                 ok = true
                 finalPath = final.path
-                result = "导入成功：\(final.lastPathComponent)\n共解压 \(n) 个文件"
+                result = "导入成功：\(final.lastPathComponent)\n共解压 \(n) 个文件\(fixMsg)"
             } catch {
                 result = "导入失败：\(error.localizedDescription)"
             }

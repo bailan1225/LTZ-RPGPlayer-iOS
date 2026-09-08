@@ -499,8 +499,19 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         guard let ball = floatingBall else { return }
+        // 横屏时悬浮球自动缩小成 10pt 半透明点（不遮挡游戏画面），竖屏恢复正常
+        let isLandscape = view.bounds.width > view.bounds.height
+        let targetSize: CGFloat = isLandscape ? 10 : 46
+        let targetAlpha: CGFloat = isLandscape ? 0.25 : 1.0
+        if ball.bounds.width != targetSize {
+            UIView.animate(withDuration: 0.2) {
+                ball.bounds = CGRect(x: 0, y: 0, width: targetSize, height: targetSize)
+                ball.layer.cornerRadius = targetSize / 2
+                ball.alpha = targetAlpha
+            }
+        }
         // 确保悬浮球在可见范围内
-        let margin: CGFloat = 6
+        let margin: CGFloat = 4
         let minX = margin + ball.bounds.width / 2
         let maxX = view.bounds.width - margin - ball.bounds.width / 2
         let minY = margin + ball.bounds.height / 2
@@ -508,7 +519,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         ball.center = CGPoint(
             x: min(max(ball.center.x, minX), maxX),
             y: min(max(ball.center.y, minY), maxY))
-        // 横屏布局变化后通知游戏重新计算 canvas 大小（修复横屏画面消失）
+        // 横屏布局变化后通知游戏重新计算 canvas 大小
         if pageLoaded {
             webView?.evaluateJavaScript("""
                 try { window.dispatchEvent(new Event('resize')); } catch(e) {}
