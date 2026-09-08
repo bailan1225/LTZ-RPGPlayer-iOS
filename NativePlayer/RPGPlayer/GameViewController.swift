@@ -311,11 +311,6 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     override var prefersStatusBarHidden: Bool { true }  // 隐藏状态栏
 
-    // 游戏强制横屏
-    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .landscape }
-    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .landscapeRight }
-    override var shouldAutorotate: Bool { true }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         title = SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent
