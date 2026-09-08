@@ -506,6 +506,32 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
                   }
                 } catch (err) {}
               }, true);
+              // 拦截 XHR.abort——记录谁调用了 abort
+              try {
+                var origXhrAbort = XMLHttpRequest.prototype.abort;
+                XMLHttpRequest.prototype.abort = function () {
+                  try {
+                    var url = (this.__url || "?").toString().substring(0, 120);
+                    var stk = new Error().stack || "";
+                    window.webkit.messageHandlers.rpgConsole.postMessage("XHR.abort: " + url + " | " + stk.substring(0, 400));
+                  } catch (e) {}
+                  return origXhrAbort.apply(this, arguments);
+                };
+              } catch (e) {}
+              // 拦截 AbortController.abort——记录谁调用了 abort
+              try {
+                if (window.AbortController) {
+                  var origCtrlAbort = AbortController.prototype.abort;
+                  AbortController.prototype.abort = function (reason) {
+                    try {
+                      var stk = new Error().stack || "";
+                      var r = reason ? (reason.message || String(reason)) : "none";
+                      window.webkit.messageHandlers.rpgConsole.postMessage("AbortController.abort: reason=" + r + " | " + stk.substring(0, 400));
+                    } catch (e) {}
+                    return origCtrlAbort.apply(this, arguments);
+                  };
+                }
+              } catch (e) {}
               // 拦截 XHR：记录所有请求的 URL/状态/耗时/abort
               try {
                 var origOpen = XMLHttpRequest.prototype.open;
