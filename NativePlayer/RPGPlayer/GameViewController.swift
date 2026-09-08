@@ -107,6 +107,7 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         var isDir: ObjCBool = false
         guard let resolved = resolve(fileURL),
               FileManager.default.fileExists(atPath: resolved.path, isDirectory: &isDir) else {
+            CrashReporter.log("scheme 404: \(rel)")
             urlSchemeTask.didFailWithError(NSError(domain: "GameScheme", code: 404,
                                                    userInfo: [NSLocalizedDescriptionKey: "404 \(rel)"]))
             return

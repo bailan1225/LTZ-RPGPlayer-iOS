@@ -81,10 +81,14 @@ final class GameDecryptor {
         return nil
     }
 
-    /// 解密：去 16 字节头 + XOR 循环 key（与 rpg_core.js 算法一致）；key 为空时仅去头
+    /// 解密：去 16 字节头 + XOR 循环 key（与 rpg_core.js 算法一致）。
+    /// 关键：第一字节为 0 表示该文件未加密（16 字节全 0 头 + 原数据），只去头不做 XOR；
+    /// 否则为 "RPGMV" 头 + XOR 加密数据。
     static func decrypt(_ data: Data, key: [UInt8]) -> Data? {
         guard data.count > 16 else { return nil }
         let body = data.dropFirst(16)
+        // 未加密文件（全 0 头）：只去头，保持原数据不变
+        if data.first == 0 { return Data(body) }
         var out = Data(count: body.count)
         let kc = key.count
         body.enumerated().forEach { i, b in
