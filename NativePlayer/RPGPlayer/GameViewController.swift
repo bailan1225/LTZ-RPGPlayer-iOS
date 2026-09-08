@@ -223,6 +223,12 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 }
                 let mime = self.mimeType(finalURL.pathExtension)
                 let response = Self.makeHTTPResponse(url: url, mime: mime, length: finalData.count)
+                // 图片响应诊断：记录大小和魔数验证
+                if rel.hasPrefix("img/") {
+                    let magicOK = Self.isValidMediaMagic(finalData)
+                    let firstBytes = finalData.prefix(8).map { String(format: "%02X", $0) }.joined()
+                    CrashReporter.log("scheme img-response: \(rel) size=\(finalData.count) magicOK=\(magicOK) bytes=\(firstBytes)")
+                }
                 self.succeedTask(urlSchemeTask, response: response, data: finalData)
             } else if let decrypted = self.resolveEncryptedFallback(fileURL) {
                 // fallback：请求 .png 但文件还是 .rpgmvp（预解密遗漏），实时解密返回
@@ -514,6 +520,26 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
                   }
                 } catch (err) {}
               }, true);
+              // 拦截 Image.onload/onerror——记录每个图片的加载结果
+              try {
+                var origImgSrc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+                if (origImgSrc && origImgSrc.set) {
+                  Object.defineProperty(HTMLImageElement.prototype, "src", {
+                    set: function (v) {
+                      var self = this;
+                      var url = String(v || "").substring(0, 120);
+                      this.addEventListener("load", function () {
+                        window.webkit.messageHandlers.rpgConsole.postMessage("img-loaded: " + url + " w=" + self.naturalWidth + " h=" + self.naturalHeight);
+                      });
+                      this.addEventListener("error", function () {
+                        window.webkit.messageHandlers.rpgConsole.postMessage("img-FAILED: " + url);
+                      });
+                      origImgSrc.set.call(this, v);
+                    },
+                    get: origImgSrc.get
+                  });
+                }
+              } catch (e) {}
               // 拦截 XHR.abort——记录谁调用了 abort
               try {
                 var origXhrAbort = XMLHttpRequest.prototype.abort;
