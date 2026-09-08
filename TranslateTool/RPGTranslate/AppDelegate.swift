@@ -42,11 +42,29 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    /// 从「文件」App 共享 / AirDrop 进来的 zip：复制到 Documents/Incoming，回前台自动提示导入
+    func application(_ app: UIApplication, open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        guard url.pathExtension.lowercased() == "zip" else { return false }
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let inc = docs.appendingPathComponent("Incoming", isDirectory: true)
+        try? fm.createDirectory(at: inc, withIntermediateDirectories: true)
+        let dest = inc.appendingPathComponent(url.lastPathComponent)
+        do {
+            if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+            try fm.copyItem(at: url, to: dest)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// 首次启动创建引导目录与说明文件（文件App / 爱思助手可见），只执行一次
     private func createFirstRunStructure() {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dirs = ["translations", "Saves", "Exports", "Backups"]
+        let dirs = ["translations", "Saves", "Exports", "Backups", "Incoming"]
         for d in dirs {
             try? fm.createDirectory(at: docs.appendingPathComponent(d, isDirectory: true),
                                     withIntermediateDirectories: true)

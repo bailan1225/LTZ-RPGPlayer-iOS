@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 
 /// 单页版：上半游戏列表，下半选中游戏的翻译操作（合并原列表页与翻译页，去掉冗余跳转）
 final class GameListViewController: UITableViewController {
@@ -12,6 +13,8 @@ final class GameListViewController: UITableViewController {
     private var isRunning = false
     private var cancelFlag = false
     private var scanTask: DispatchWorkItem?
+    private var importQueue: [URL] = []
+    private var importing = false
 
     private lazy var progressView: UIProgressView = {
         let p = UIProgressView(progressViewStyle: .default)
@@ -78,13 +81,20 @@ final class GameListViewController: UITableViewController {
 
     @objc private func importGame() {
         let sheet = UIAlertController(title: "导入游戏", message: nil, preferredStyle: .actionSheet)
-        sheet.addAction(UIAlertAction(title: "解压导入（zip 放进本 App 文档目录后在此选择）", style: .default) { [weak self] _ in
+        sheet.addAction(UIAlertAction(title: "从文件选择 zip 导入", style: .default) { [weak self] _ in
             guard let self = self else { return }
-            let zips = ZipExtractor.pendingZips(in: Self.documents)
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.zip])
+            picker.delegate = self
+            picker.allowsMultipleSelection = true
+            self.present(picker, animated: true)
+        })
+        sheet.addAction(UIAlertAction(title: "解压导入（zip 已放入本 App 文档目录）", style: .default) { [weak self] _ in
+            guard let self = self else { return }
+            let zips = self.pendingZipCandidates()
             if zips.isEmpty {
                 let tip = UIAlertController(
                     title: "没有找到 zip",
-                    message: "请用文件App / 爱思助手将游戏压缩包（.zip）放入本 App 的文档目录，然后再点「解压导入」。",
+                    message: "请用文件App / 爱思助手将游戏压缩包（.zip）放入本 App 的文档目录，或从「文件」App 直接共享 zip 到本 App，然后再点导入。",
                     preferredStyle: .alert)
                 tip.addAction(UIAlertAction(title: "好", style: .cancel))
                 self.present(tip, animated: true)
@@ -95,7 +105,7 @@ final class GameListViewController: UITableViewController {
                 title: "确认解压导入",
                 message: "\(z.lastPathComponent)\n\n将解压并导入为游戏，导入成功后自动删除该压缩包。",
                 preferredStyle: .alert)
-            ask.addAction(UIAlertAction(title: "解压导入", style: .default) { _ in self.importZip(z) })
+            ask.addAction(UIAlertAction(title: "解压导入", style: .default) { _ in self.enqueueImports([z]) })
             ask.addAction(UIAlertAction(title: "取消", style: .cancel))
             self.present(ask, animated: true)
         })
@@ -103,7 +113,7 @@ final class GameListViewController: UITableViewController {
             guard let self = self else { return }
             let guide = UIAlertController(
                 title: "手动复制",
-                message: "把含 www/data（或 data）的游戏文件夹放入本 App 的文档目录：\n\n① 文件App：打开「文件」→「我的 iPhone」→「RPG 翻译器」，把整个游戏文件夹拖入\n\n② 爱思助手：连接设备 → 应用 → RPG 翻译器 → 浏览 → 把游戏文件夹拖进 Documents\n\n（如果是 zip 压缩包，直接在本页或 + 文件选择器里点「解压导入」即可）",
+                message: "把含 www/data（或 data）的游戏文件夹放入本 App 的文档目录：\n\n① 文件App：打开「文件」→「我的 iPhone」→「RPG 翻译器」，把整个游戏文件夹拖入\n\n② 爱思助手：连接设备 → 应用 → RPG 翻译器 → 浏览 → 把游戏文件夹拖进 Documents\n\n③ zip 压缩包：从「文件」App 长按 zip →「共享」→「拷贝到 RPG 翻译器」，回 App 自动提示导入；或在文件选择器里直接选。",
                 preferredStyle: .alert)
             guide.addAction(UIAlertAction(title: "好", style: .cancel))
             self.present(guide, animated: true)
@@ -116,8 +126,54 @@ final class GameListViewController: UITableViewController {
         present(sheet, animated: true)
     }
 
-    /// 后台解压导入：解压 -> 定位游戏根 -> 移动到 Documents/<游戏名> -> 删除 zip -> 刷新
-    private func importZip(_ zip: URL) {
+    /// Documents 根目录 + Incoming（文件App 共享进来）里的待导入 zip
+    private func pendingZipCandidates() -> [URL] {
+        let fm = FileManager.default
+        let docs = Self.documents
+        var zips = ZipExtractor.pendingZips(in: docs)
+        let incoming = docs.appendingPathComponent("Incoming", isDirectory: true)
+        if fm.fileExists(atPath: incoming.path) {
+            zips += ZipExtractor.pendingZips(in: incoming)
+        }
+        return zips.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func enqueueImports(_ urls: [URL]) {
+        importQueue.append(contentsOf: urls)
+        processNextImport()
+    }
+
+    private func processNextImport() {
+        guard !importing, !importQueue.isEmpty else { return }
+        importing = true
+        let url = importQueue.removeFirst()
+        importZip(url) { [weak self] in
+            self?.importing = false
+            self?.processNextImport()
+        }
+    }
+
+    /// 递归清理压缩包里的 Mac/Windows 垃圾（__MACOSX、.DS_Store、Thumbs.db）
+    private func cleanupJunkRecursive(in dir: URL) {
+        let fm = FileManager.default
+        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        for it in items {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: it.path, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                if it.lastPathComponent == "__MACOSX" {
+                    try? fm.removeItem(at: it)
+                } else {
+                    cleanupJunkRecursive(in: it)
+                }
+            } else if it.lastPathComponent == ".DS_Store" || it.lastPathComponent == "Thumbs.db" {
+                try? fm.removeItem(at: it)
+            }
+        }
+    }
+
+    /// 后台解压导入：解压 -> 清理垃圾 -> 定位游戏根 -> 移动到 Documents/<游戏名>（重名自动加序号）-> 删 zip -> 选中并刷新
+    private func importZip(_ zip: URL, completion: (() -> Void)? = nil) {
         let progress = UIAlertController(
             title: "正在解压导入…",
             message: "大文件可能需要一会儿，请勿关闭 App",
@@ -126,6 +182,7 @@ final class GameListViewController: UITableViewController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var result = ""
             var ok = false
+            var finalPath = ""
             do {
                 let docs = Self.documents
                 let base = zip.deletingPathExtension().lastPathComponent
@@ -133,9 +190,14 @@ final class GameListViewController: UITableViewController {
                 try? FileManager.default.removeItem(at: dest)
                 try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
                 let n = try ZipExtractor.extract(zip, to: dest)
+                self?.cleanupJunkRecursive(in: dest)
                 let gameRoot = ZipExtractor.locateGameRoot(in: dest) ?? dest
-                let final = docs.appendingPathComponent(base, isDirectory: true)
-                try? FileManager.default.removeItem(at: final)
+                var final = docs.appendingPathComponent(base, isDirectory: true)
+                var suffix = 2
+                while FileManager.default.fileExists(atPath: final.path) {
+                    final = docs.appendingPathComponent("\(base)_\(suffix)", isDirectory: true)
+                    suffix += 1
+                }
                 if gameRoot.path != dest.path {
                     try FileManager.default.moveItem(at: gameRoot, to: final)
                     try? FileManager.default.removeItem(at: dest)
@@ -144,27 +206,41 @@ final class GameListViewController: UITableViewController {
                 }
                 try? FileManager.default.removeItem(at: zip)
                 ok = true
-                result = "导入成功：\(base)\n共解压 \(n) 个文件"
+                finalPath = final.path
+                result = "导入成功：\(final.lastPathComponent)\n共解压 \(n) 个文件"
             } catch {
                 result = "导入失败：\(error.localizedDescription)"
             }
             DispatchQueue.main.async {
                 self?.dismiss(animated: true) {
-                    self?.refresh()
+                    guard let self = self else { completion?(); return }
+                    self.refresh()
+                    if ok {
+                        if let idx = self.games.firstIndex(where: { $0.root.path == finalPath }) {
+                            self.selectedIndex = idx
+                            self.stats = nil
+                            self.summary = nil
+                            self.isRunning = false
+                            self.cancelFlag = false
+                            self.phaseLabel.text = " "
+                            self.progressView.progress = 0
+                            self.refreshStats()
+                        }
+                    }
                     let done = UIAlertController(
                         title: ok ? "导入完成" : "导入失败",
                         message: result,
                         preferredStyle: .alert)
-                    done.addAction(UIAlertAction(title: "好", style: .default))
-                    self?.present(done, animated: true)
+                    done.addAction(UIAlertAction(title: "好", style: .default) { _ in completion?() })
+                    self.present(done, animated: true)
                 }
             }
         }
     }
 
-    /// 打开 App 时发现 Documents 根目录有 zip -> 弹窗确认导入
+    /// 打开 App 时发现 Documents/Incoming 有 zip -> 弹窗确认导入
     private func checkPendingZips() {
-        guard let z = ZipExtractor.pendingZips(in: Self.documents).first else { return }
+        guard let z = pendingZipCandidates().first else { return }
         let ask = UIAlertController(
             title: "发现压缩包",
             message: "\(z.lastPathComponent)\n\n要解压并导入为游戏吗？（导入成功后自动删除该压缩包）",
@@ -516,5 +592,30 @@ final class GameListViewController: UITableViewController {
         section == 0
             ? "把含 www/data（或 data）的游戏文件夹或 zip 压缩包放入本 App 的文稿目录，自动识别 MV/MZ。\n\n翻译完点「导出翻译后的游戏（zip）」交给第三方 Player（RPG Pocket / QuestPlay / RPGEmu）运行。"
             : nil
+    }
+}
+
+
+extension GameListViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        let fm = FileManager.default
+        let docs = Self.documents
+        var copied: [URL] = []
+        for url in urls {
+            guard url.pathExtension.lowercased() == "zip" else { continue }
+            let dest = docs.appendingPathComponent(url.lastPathComponent)
+            do {
+                if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+                try fm.copyItem(at: url, to: dest)
+                copied.append(dest)
+            } catch {}
+        }
+        guard !copied.isEmpty else {
+            let a = UIAlertController(title: "没有可导入的 zip", message: "请选择 .zip 压缩包。", preferredStyle: .alert)
+            a.addAction(UIAlertAction(title: "好", style: .default))
+            present(a, animated: true)
+            return
+        }
+        enqueueImports(copied)
     }
 }
