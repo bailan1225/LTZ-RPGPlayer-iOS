@@ -291,6 +291,19 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         let config = WKWebViewConfiguration()
         let contentController = WKUserContentController()
 
+        // 0) 注入游戏画面居中 CSS（修复横屏时 canvas 偏移/消失）
+        contentController.addUserScript(WKUserScript(
+            source: """
+            (function () {
+              var s = document.createElement('style');
+              s.textContent = 'html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;}' +
+                'canvas{display:block;margin:0 auto;}' +
+                '#ggs-page,#gameCanvas,#GameCanvas{width:100%!important;height:100%!important;}';
+              (document.head || document.documentElement).appendChild(s);
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
         // 1) 注入翻译配置（在游戏脚本之前）
         contentController.addUserScript(WKUserScript(
             source: TranslatorConfig.injectionSource(),
@@ -495,6 +508,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         ball.center = CGPoint(
             x: min(max(ball.center.x, minX), maxX),
             y: min(max(ball.center.y, minY), maxY))
+        // 横屏布局变化后通知游戏重新计算 canvas 大小（修复横屏画面消失）
+        if pageLoaded {
+            webView?.evaluateJavaScript("""
+                try { window.dispatchEvent(new Event('resize')); } catch(e) {}
+                try { if (window.Graphics && Graphics._requestUpdate) Graphics._requestUpdate(); } catch(e) {}
+            """)
+        }
     }
 
     @objc private func backToList() {
