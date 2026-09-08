@@ -166,6 +166,10 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         var path = url.path
         if path.isEmpty || path == "/" { path = "/index.html" }
         let rel = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        // 记录图片/音频请求（诊断加载卡住的原因）
+        if rel.hasPrefix("img/") || rel.hasPrefix("audio/") || rel.hasPrefix("movies/") {
+            CrashReporter.log("scheme request: \(rel)")
+        }
         let fileURL = root.appendingPathComponent(rel).standardizedFileURL
         // 目录穿越防护：只允许 root 范围内
         let rootPath = root.path
@@ -246,9 +250,13 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
         let taskID = ObjectIdentifier(urlSchemeTask)
+        let urlStr = urlSchemeTask.request.url?.absoluteString ?? "?"
         taskLock.lock()
-        activeTasks.remove(taskID)
+        let wasActive = activeTasks.remove(taskID) != nil
         taskLock.unlock()
+        if wasActive {
+            CrashReporter.log("scheme stop(cancelled): \(urlStr)")
+        }
     }
 
     /// 安全完成任务：检查任务是否仍活跃，避免对已取消任务调用 didFinish 崩溃
