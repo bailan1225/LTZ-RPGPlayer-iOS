@@ -500,8 +500,8 @@ final class GameListViewController: UITableViewController {
             summary = nil
             isRunning = false
             cancelFlag = false
-            phaseLabel?.text = " "
-            progressView?.progress = 0
+            phaseLabel.text = " "
+            progressView.progress = 0
         }
         refresh()
     }
