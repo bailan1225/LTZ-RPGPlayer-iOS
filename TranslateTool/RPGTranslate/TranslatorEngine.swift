@@ -246,7 +246,7 @@ final class TranslatorEngine {
             session.dataTask(with: toolReq) { [weak self] data, _, err in
                 guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    self.aquaChatFallback(text: capped, completion: completion)
+                    self?.aquaChatFallback(text: capped, completion: completion)
                     return
                 }
                 guard let r = self.parseToolTranslate(data, original: capped) else {
