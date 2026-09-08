@@ -8,6 +8,17 @@ final class GamesViewController: UITableViewController {
     private var selectedIndex: Int?
     private let defaults = UserDefaults.standard
 
+    init() {
+        super.init(style: .plain)  // 不用 insetGrouped 分组卡片
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    // 翻译界面保持竖屏
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask { .portrait }
+    override var shouldAutorotate: Bool { false }
+    override var preferredInterfaceOrientationForPresentation: UIInterfaceOrientation { .portrait }
+
     private var stats: ScanStats?
     private var summary: TranslateSummary?
     private var isRunning = false
