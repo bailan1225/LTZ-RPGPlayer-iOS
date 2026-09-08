@@ -229,11 +229,15 @@ final class TranslatorEngine {
                 completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .aqua:
-            // AQUA 网关：仅使用官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费），不调用模型接口
+            // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（免费、不调用模型），
+            // 解析失败自动回退对话模型（免费 glm-4-flash，官方网页翻译同款端点，保证出译文）
             let capped = String(text.prefix(maxTextLength))
             let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
-                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else { completion(nil); return }
+                  let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
+                self.aquaChatFallback(text: capped, completion: completion)
+                return
+            }
             var toolReq = URLRequest(url: toolURL)
             toolReq.httpMethod = "POST"
             toolReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -242,10 +246,13 @@ final class TranslatorEngine {
             session.dataTask(with: toolReq) { [weak self] data, _, err in
                 guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    completion(nil)
+                    self.aquaChatFallback(text: capped, completion: completion)
                     return
                 }
-                guard let r = self.parseToolTranslate(data, original: capped) else { completion(nil); return }
+                guard let r = self.parseToolTranslate(data, original: capped) else {
+                    self.aquaChatFallback(text: capped, completion: completion)
+                    return
+                }
                 completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
@@ -333,6 +340,35 @@ final class TranslatorEngine {
         }
     }
 
+
+    /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + glm-4-flash）
+    private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
+        guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
+        let model = config.model.isEmpty ? "glm-4-flash" : config.model
+        var body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": buildSystemPrompt()],
+                ["role": "user", "content": text]
+            ],
+            "temperature": 0.2,
+            "max_tokens": 4096
+        ]
+        guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { completion(nil); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
+        req.httpBody = bodyData
+        session.dataTask(with: req) { [weak self] data, _, err in
+            guard let data = data, let self = self else {
+                self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                completion(nil)
+                return
+            }
+            completion(self.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+        }.resume()
+    }
 
     /// 目标语言映射到 AQUA 翻译工具支持的短码（zh/en/ja/ko/fr/de/ru/es）
     private func aquaLang(_ t: String) -> String {

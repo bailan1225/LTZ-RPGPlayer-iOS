@@ -188,7 +188,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 0:
-            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：走官方翻译工具端点 /v1/tools/translate（自动识别源语言、免费、不需要模型名），只需填 Key。Key 在 acu.ltzy.top/console 创建（sk-）。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：优先官方翻译工具端点 /v1/tools/translate（免费、自动识别源语言），解析失败自动回退免费对话模型 glm-4-flash 保证出译文。只需填 Key（acu.ltzy.top/console 创建，sk-）。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG 翻译器」，优先于内置词典。"
         case 4:
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
