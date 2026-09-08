@@ -160,6 +160,20 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         title = SafePath.originalName(for: gameDir) ?? gameDir.lastPathComponent
         view.backgroundColor = .black
         UIApplication.shared.isIdleTimerDisabled = true
+        // 先解析游戏目标并解密加密资源（.rpgmvp 等 → 真实格式），再建加载器索引，
+        // 否则 scheme handler 的索引里只有加密文件名，解密后的新文件名会 404
+        let safeDir = SafePath.sanitize(gameDir)
+        currentTarget = GameDetector.resolveLoadTarget(for: safeDir)
+        if let target = currentTarget, GameDecryptor.needsDecryption(in: target.readRoot) {
+            showLoading("正在解密游戏资源…")
+            let r = GameDecryptor.decryptIfNeeded(in: target.readRoot)
+            if r.ok && r.files > 0 {
+                CrashReporter.log("decrypted \(r.files) encrypted files")
+            } else if !r.ok {
+                CrashReporter.log("decrypt failed: encryption key not found")
+            }
+            hideLoading()
+        }
         setupWebView()
         setupToolbar()
         loadGame()
@@ -248,10 +262,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
 
-        // 解析游戏目标（index/www 定位），用于 scheme handler 的根目录
-        let safeDir = SafePath.sanitize(gameDir)
-        currentTarget = GameDetector.resolveLoadTarget(for: safeDir)
-        // rpg:// 自定义协议：直接读本地文件，不走网络
+        // rpg:// 自定义协议：直接读本地文件，不走网络（currentTarget 已在 viewDidLoad 解析）
         let handler = GameSchemeHandler(root: currentTarget?.readRoot ?? gameDir)
         schemeHandler = handler
         config.setURLSchemeHandler(handler, forURLScheme: "rpg")
