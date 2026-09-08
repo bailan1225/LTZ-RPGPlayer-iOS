@@ -466,6 +466,7 @@ final class DataTranslator {
         let group = DispatchGroup()
         let workQueue = DispatchQueue.global(qos: .userInitiated)       // 提交/写回后台执行，不卡 UI
 
+        var processed = 0   // 已处理条数（成功+失败），进度条按此推进，失败也看得见
         func batchTranslate(_ items: [String], _ phase: String, done: @escaping () -> Void) {
             let toTranslate = items.filter { mapping[$0] == nil }
             workQueue.async {
@@ -478,10 +479,10 @@ final class DataTranslator {
                         resultQueue.async {
                             if let r = result { mapping[item] = r }
                             doneInBatch += 1
+                            processed += 1
                             if doneInBatch % 40 == 0 { engine.saveCache() }
-                            let pd = mapping.count
                             DispatchQueue.main.async {
-                                progress(TranslateProgress(phase: phase, done: pd, total: total))
+                                progress(TranslateProgress(phase: phase, done: processed, total: total))
                             }
                             semaphore.signal()
                             group.leave()
