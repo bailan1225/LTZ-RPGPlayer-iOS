@@ -1,7 +1,22 @@
-// Storage Polyfills: Infinite Save Support
+// Storage Polyfills: Infinite Save Support (MV Only)
 
 (function() {
-    console.log("Initializing Storage Polyfills...");
+    // 只在 MV 环境下执行，避免与 MZ 的 StorageManager 冲突
+    function isMV() {
+        if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+            return Utils.RPGMAKER_NAME === 'MV';
+        }
+        // MZ 有 DataManager.maxSaveFiles，MV 没有；用这个判断
+        if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+            return false;
+        }
+        return true; // 默认按 MV 处理
+    }
+    if (!isMV()) {
+        console.log('[mv_storage] Skipped: not MV environment');
+        return;
+    }
+    console.log("Initializing Storage Polyfills (MV)...");
 
     const SAVE_API_URL = "rpgmv://saves/";
     const existsCache = Object.create(null);
