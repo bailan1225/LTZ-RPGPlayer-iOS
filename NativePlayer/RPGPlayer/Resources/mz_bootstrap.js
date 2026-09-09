@@ -20,6 +20,7 @@
   window.nw = window.nw || {
     App: {
       dataPath: '/data',
+      argv: [],
       quit: function () {
         try { console.log('[nw.App.quit]'); } catch (_) {}
       }

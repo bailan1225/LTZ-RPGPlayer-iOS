@@ -300,8 +300,6 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     private var pageLoaded = false
     private var schemeHandler: GameSchemeHandler?
     private var floatingBall: FloatingBallView?
-    private var virtualGamepad: VirtualGamepad?
-    private var gamepadVisible = true
 
     init(gameDir: URL) {
         self.gameDir = gameDir
@@ -630,16 +628,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // 5) App 功能桥接（供作弊器菜单调用：切换手柄、复制到剪贴板）
+        // 5) App 功能桥接（供作弊器菜单调用：复制到剪贴板）
         contentController.addUserScript(WKUserScript(
             source: """
             (function(){
               if (window.__appBridgeInstalled) return;
               window.__appBridgeInstalled = true;
-              window.__gamepadVisible = false;
-              window.__toggleGamepad = function() {
-                try { window.webkit.messageHandlers.rpgApp.postMessage({action: 'toggleGamepad'}); } catch(e) {}
-              };
               window.__copyToClipboard = function(text) {
                 try {
                   var ta = document.createElement('textarea');
@@ -687,13 +681,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        // 虚拟手柄（方向键 + A/B/X/Y，参考 OnscreenController 开源设计）
-        let pad = VirtualGamepad()
-        pad.webView = webView
-        pad.frame = view.bounds
-        pad.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(pad)
-        virtualGamepad = pad
+        // 虚拟手柄已移除（用户要求）
         showLoading("正在加载游戏…")
     }
 
@@ -954,12 +942,6 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         webView.evaluateJavaScript("if (window.ArkRPG_CheatMenu && typeof ArkRPG_CheatMenu.toggleMenu === 'function') { ArkRPG_CheatMenu.toggleMenu(); } else { console.log('ArkRPG_CheatMenu not ready'); }", completionHandler: nil)
     }
 
-    @objc private func toggleGamepad() {
-        gamepadVisible.toggle()
-        virtualGamepad?.isHidden = !gamepadVisible
-        webView.evaluateJavaScript("window.__gamepadVisible = \(gamepadVisible ? "true" : "false");", completionHandler: nil)
-    }
-
     @objc private func reload() {
         webView.stopLoading()
         loadGame()
@@ -1014,9 +996,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         }
         if message.name == "rpgApp", let dict = message.body as? [String: Any],
            let action = dict["action"] as? String {
-            if action == "toggleGamepad" {
-                toggleGamepad()
-            }
+            // App 功能桥接（预留）
             return
         }
         print("rpgTr:", message.body)
