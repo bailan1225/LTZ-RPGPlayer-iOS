@@ -57,56 +57,34 @@ enum TranslatorConfig {
     }
 }
 
-/// 读取内置 Translator.js 注入脚本
+/// 读取内置 translator.js 注入脚本
 enum TranslatorJS {
     static var source: String {
-        guard let url = Bundle.main.url(forResource: "Translator", withExtension: "js"),
+        guard let url = Bundle.main.url(forResource: "translator", withExtension: "js"),
               let s = try? String(contentsOf: url, encoding: .utf8) else {
-            return "// Translator.js missing"
+            return "// translator.js missing"
         }
         return s
     }
 }
 
-/// 读取内置 Cheat.js 注入脚本（保留备用）
-enum CheatJS {
-    static var source: String {
-        guard let url = Bundle.main.url(forResource: "Cheat", withExtension: "js"),
-              let s = try? String(contentsOf: url, encoding: .utf8) else {
-            return "// Cheat.js missing"
-        }
-        return s
-    }
-}
-
-/// 读取内置 Cheat_Menu.js（RPGMakerCheatMenu 开源项目，ArkRPG 同款）
-enum CheatMenuJS {
-    static var source: String {
-        guard let url = Bundle.main.url(forResource: "Cheat_Menu", withExtension: "js"),
-              let s = try? String(contentsOf: url, encoding: .utf8) else {
-            return "// Cheat_Menu.js missing"
-        }
-        return s
-    }
-}
-
-/// 读取内置 ArkOptimizations.js（整合 ArkRPG 开源项目的核心优化：视口/坐标/性能/纹理GC/输入映射）
+/// 读取内置 ark_optimizations.js（整合 ArkRPG 开源项目的核心优化：视口/坐标/性能/纹理GC/输入映射）
 enum ArkOptimizationsJS {
     static var source: String {
-        guard let url = Bundle.main.url(forResource: "ArkOptimizations", withExtension: "js"),
+        guard let url = Bundle.main.url(forResource: "ark_optimizations", withExtension: "js"),
               let s = try? String(contentsOf: url, encoding: .utf8) else {
-            return "// ArkOptimizations.js missing"
+            return "// ark_optimizations.js missing"
         }
         return s
     }
 }
 
-/// 读取内置 ArkRPG_CheatMenu.js（ArkRPG 同款现代作弊器，MIT 协议，整合 RPGMakerCheatMenu + ParamonosCheatUI 功能）
+/// 读取内置 ark_rpg_cheat_menu.js（ArkRPG 同款现代作弊器，MIT 协议，整合 RPGMakerCheatMenu + ParamonosCheatUI 功能）
 enum ArkCheatMenuJS {
     static var source: String {
-        guard let url = Bundle.main.url(forResource: "ArkRPG_CheatMenu", withExtension: "js"),
+        guard let url = Bundle.main.url(forResource: "ark_rpg_cheat_menu", withExtension: "js"),
               let s = try? String(contentsOf: url, encoding: .utf8) else {
-            return "// ArkRPG_CheatMenu.js missing"
+            return "// ark_rpg_cheat_menu.js missing"
         }
         return s
     }
@@ -254,34 +232,34 @@ enum ArkFullCompatJS {
         // 1. Vorbis .ogg 音频解码（iOS WebView 原生不支持 .ogg）
         "stbvorbis_stream_asm",
         "stbvorbis_stream",
-        "worklet-stbvorbis",
+        "worklet_stbvorbis",
         // 2. 音频流
-        "AudioStreaming",
-        "compat_AudioStreaming",
-        "N_X_AudioStreaming",
+        "audio_streaming",
+        "compat_audio_streaming",
+        "n_x_audio_streaming",
         // 3. 图片降采样（减少内存/闪退）
-        "ArkImageDownsample",
-        "ArkImageDownsampleMZ",
+        "ark_image_downsample",
+        "ark_image_downsample_mz",
         // 4. 运行时 JSON 词典翻译
-        "RPGTextTranslation",
+        "rpg_text_translation",
         // 5. 内联视频
         "inline_video",
         // 6. 插件兼容层（按字母序）
-        "compat_ChimakiSpine",
-        "compat_DKTools_Localization",
-        "compat_Drill_LayerTiledGif",
-        "compat_Galv_QuestLog",
-        "compat_KNS_TalkPortrait",
-        "compat_PDX_KeybindingsRemap",
-        "compat_SAN_Imp_ColorCache",
-        "compat_SRD_GameUpgrade",
-        "compat_SRD_PreloaderCore",
-        "compat_TouchUI",
-        "compat_YEP_FpsSynchOption",
+        "compat_chimaki_spine",
+        "compat_dktools_localization",
+        "compat_drill_layer_tiled_gif",
+        "compat_galv_quest_log",
+        "compat_kns_talk_portrait",
+        "compat_pdx_keybindings_remap",
+        "compat_san_imp_color_cache",
+        "compat_srd_game_upgrade",
+        "compat_srd_preloader_core",
+        "compat_touch_ui",
+        "compat_yep_fps_synch_option",
         "compat_globalmap",
         "compat_koffi_modmanager",
         "compat_mv3d",
-        "compat_ParallelBgs",
+        "compat_parallel_bgs",
         "compat_pixi_apng"
     ]
 
