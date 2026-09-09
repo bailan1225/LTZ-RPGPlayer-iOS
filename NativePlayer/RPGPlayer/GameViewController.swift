@@ -395,19 +395,26 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             source: ArkOptimizationsJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
-        // 0.6) 注入 ArkRPG 兼容层（crypto polyfill / 同步XHR修复 / PIXI纹理修复 / MZ WebGL兼容）
-        contentController.addUserScript(WKUserScript(
-            source: ArkCryptoJS.source,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        contentController.addUserScript(WKUserScript(
-            source: ArkSyncXHRJS.source,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        contentController.addUserScript(WKUserScript(
-            source: ArkPixiTextureFixJS.source,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        contentController.addUserScript(WKUserScript(
-            source: ArkMZWebGLCompatJS.source,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 0.6) 注入 ArkRPG 完整兼容层（按依赖顺序：core -> crypto -> fs -> media -> storage -> syncXHR -> pixi -> webgl -> bootstrap -> gameMedia -> pluginParams -> audio）
+        let arkLayers = [
+            ArkCoreJS.source,           // Utils.isNwjs 拦截 + PIXI 渲染器崩溃回退（必须最早）
+            ArkCryptoJS.source,         // SHA-256/AES-CBC polyfill
+            ArkFSJS.source,             // Node fs 模块 polyfill
+            ArkMediaJS.source,          // 媒体模块 polyfill
+            ArkStorageJS.source,        // MV/MZ 存档处理 polyfill
+            ArkSyncXHRJS.source,        // 同步 XHR 修复
+            ArkPixiTextureFixJS.source, // PIXI 基础纹理修复
+            ArkMZWebGLCompatJS.source,  // MZ WebGL 兼容
+            ArkMZBootstrapJS.source,    // MZ 启动修复
+            ArkGameMediaJS.source,      // MV/MZ 媒体修复
+            ArkPluginParamsJS.source,   // 插件参数修复
+            ArkAudioJS.source           // 音频修复（iOS/macOS）
+        ]
+        for layer in arkLayers {
+            contentController.addUserScript(WKUserScript(
+                source: layer,
+                injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
 
         // 1) 注入翻译配置（在游戏脚本之前）
         contentController.addUserScript(WKUserScript(

@@ -155,3 +155,94 @@ enum ArkMZWebGLCompatJS {
         return s
     }
 }
+
+/// 读取内置 common_core.js（核心 polyfill：Utils.isNwjs 拦截 + PIXI 渲染器崩溃回退 Canvas）
+enum ArkCoreJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "common_core", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// common_core.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 common_fs.js（Node fs 模块 polyfill，游戏插件兼容性）
+enum ArkFSJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "common_fs", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// common_fs.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 common_media.js（媒体模块 polyfill）
+enum ArkMediaJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "common_media", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// common_media.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 mv_storage.js / mz_storage.js（存档处理 polyfill）
+enum ArkStorageJS {
+    static var source: String {
+        var s = ""
+        if let url = Bundle.main.url(forResource: "mv_storage", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        if let url = Bundle.main.url(forResource: "mz_storage", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        return s.isEmpty ? "// storage js missing" : s
+    }
+}
+
+/// 读取内置 mz_bootstrap.js（MZ 启动修复）
+enum ArkMZBootstrapJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "mz_bootstrap", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// mz_bootstrap.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 mv_media.js / mz_media.js（MV/MZ 媒体修复）
+enum ArkGameMediaJS {
+    static var source: String {
+        var s = ""
+        if let url = Bundle.main.url(forResource: "mv_media", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        if let url = Bundle.main.url(forResource: "mz_media", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        return s.isEmpty ? "// game media js missing" : s
+    }
+}
+
+/// 读取内置 mv_plugin_params.js / mz_plugin_params.js（插件参数修复）
+enum ArkPluginParamsJS {
+    static var source: String {
+        var s = ""
+        if let url = Bundle.main.url(forResource: "mv_plugin_params", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        if let url = Bundle.main.url(forResource: "mz_plugin_params", withExtension: "js"),
+           let t = try? String(contentsOf: url, encoding: .utf8) { s += t + "\n" }
+        return s.isEmpty ? "// plugin params js missing" : s
+    }
+}
+
+/// 读取内置 mac_audio.js（音频修复，iOS/macOS 通用）
+enum ArkAudioJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "mac_audio", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// mac_audio.js missing"
+        }
+        return s
+    }
+}
