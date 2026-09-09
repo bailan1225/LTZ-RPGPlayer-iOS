@@ -100,3 +100,58 @@ enum ArkOptimizationsJS {
         return s
     }
 }
+
+/// 读取内置 ArkRPG_CheatMenu.js（ArkRPG 同款现代作弊器，MIT 协议，整合 RPGMakerCheatMenu + ParamonosCheatUI 功能）
+enum ArkCheatMenuJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "ArkRPG_CheatMenu", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// ArkRPG_CheatMenu.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 common_crypto.js（Node crypto 模块 polyfill：SHA-256 + AES-CBC，加密游戏运行时解密用）
+enum ArkCryptoJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "common_crypto", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// common_crypto.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 common_sync_xhr.js（同步 XHR 修复，部分游戏插件依赖同步请求）
+enum ArkSyncXHRJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "common_sync_xhr", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// common_sync_xhr.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 pixi_base_texture_fix.js（PIXI 基础纹理修复，解决部分游戏纹理加载失败）
+enum ArkPixiTextureFixJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "pixi_base_texture_fix", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// pixi_base_texture_fix.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 mz_webgl_compat.js（MZ WebGL 兼容修复）
+enum ArkMZWebGLCompatJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "mz_webgl_compat", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// mz_webgl_compat.js missing"
+        }
+        return s
+    }
+}

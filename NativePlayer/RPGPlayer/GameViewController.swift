@@ -395,6 +395,20 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             source: ArkOptimizationsJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
+        // 0.6) 注入 ArkRPG 兼容层（crypto polyfill / 同步XHR修复 / PIXI纹理修复 / MZ WebGL兼容）
+        contentController.addUserScript(WKUserScript(
+            source: ArkCryptoJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        contentController.addUserScript(WKUserScript(
+            source: ArkSyncXHRJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        contentController.addUserScript(WKUserScript(
+            source: ArkPixiTextureFixJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        contentController.addUserScript(WKUserScript(
+            source: ArkMZWebGLCompatJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
         // 1) 注入翻译配置（在游戏脚本之前）
         contentController.addUserScript(WKUserScript(
             source: TranslatorConfig.injectionSource(),
@@ -928,16 +942,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func toggleCheat() {
-        // RPGMakerCheatMenu：模拟按数字键1打开/关闭作弊菜单
-        let js = """
-        (function(){
-          var ev = new KeyboardEvent('keydown', {key:'1', code:'Digit1', bubbles:true, cancelable:true});
-          Object.defineProperty(ev, 'keyCode', {value: 49});
-          Object.defineProperty(ev, 'which', {value: 49});
-          window.dispatchEvent(ev);
-        })();
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
+        // ArkRPG_CheatMenu：直接调用 toggleMenu() 打开/关闭作弊菜单
+        webView.evaluateJavaScript("if (window.ArkRPG_CheatMenu && typeof ArkRPG_CheatMenu.toggleMenu === 'function') { ArkRPG_CheatMenu.toggleMenu(); } else { console.log('ArkRPG_CheatMenu not ready'); }", completionHandler: nil)
     }
 
     @objc private func toggleGamepad() {
@@ -1021,14 +1027,15 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func injectCheatMenu() {
-        let src = CheatMenuJS.source
+        // ArkRPG_CheatMenu：现代 UI 作弊器，直接注入即可（自带初始化逻辑）
+        let src = ArkCheatMenuJS.source
         let js = """
         (function(){
-          if (window.__cheatMenuInjected) return;
-          window.__cheatMenuInjected = true;
+          if (window.__arkCheatMenuInjected) return;
+          window.__arkCheatMenuInjected = true;
           try {
             \(src)
-          } catch(e) { console.log('CheatMenu inject error:', e); }
+          } catch(e) { console.log('ArkCheatMenu inject error:', e); }
         })();
         """
         webView.evaluateJavaScript(js, completionHandler: nil)

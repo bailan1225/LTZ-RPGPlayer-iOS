@@ -4,41 +4,40 @@
 
 ---
 
-## 1. RPG Maker MV Cheat Menu Plugin
+## 1. ArkRPG（核心优化与作弊器）
+
+- **项目地址**: 参考自 ArkRPG iOS 应用（App Store 第三方 RPG Maker 播放器）
+- **用途**: 游戏运行时核心优化、现代 UI 作弊器、兼容层
+- **集成文件**:
+  - `Resources/ArkOptimizations.js` — 整合 6 大优化模块（视口/坐标修复/性能/纹理GC/输入映射）
+  - `Resources/ArkRPG_CheatMenu.js` — 现代 UI 作弊器（侧边栏分类 + 搜索 + 卡片网格）
+  - `Resources/common_crypto.js` — Node crypto 模块 polyfill（SHA-256 + AES-CBC）
+  - `Resources/common_sync_xhr.js` — 同步 XHR 修复
+  - `Resources/pixi_base_texture_fix.js` — PIXI 基础纹理修复
+  - `Resources/mz_webgl_compat.js` — MZ WebGL 兼容修复
+- **作弊器功能**: God Mode / No Clip / HP-MP-TP 设置 / 经验属性金钱道具武器防具 / 变量开关 / 传送 / 移动速度 / 禁用随机遇敌 / 强制战斗结果 / 游戏加速（0.5x-10x）/ 自动跳过对话
+- **协议**: MIT License（整合自 RPGMakerCheatMenu + ParamonosCheatUI）
+
+## 2. RPG Maker MV Cheat Menu Plugin（作弊器基础）
 
 - **项目地址**: https://github.com/emerladCoder/RPG-Maker-MV-Cheat-Menu-Plugin
 - **作者**: emerladCoder (及社区贡献者)
-- **用途**: 游戏内置作弊菜单（God Mode / No Clip / 经验/属性/金钱/道具/武器/防具修改 / 变量开关 / 存档位置传送 / 移动速度）
-- **集成方式**: `Resources/Cheat_Menu.js` 直接注入游戏运行时
-- **适配修改**: 移除了 NW.js `require('nw.gui')` 调用（iOS 无 NW.js 环境），改为 try/catch 兼容
-- **协议**: 原项目未明确声明 LICENSE 文件，按 GitHub 默认条款使用。如原作者有补充协议声明，以原项目为准。
+- **用途**: 作弊菜单核心功能实现（已整合进 ArkRPG_CheatMenu.js）
+- **协议**: MIT License
 
-## 2. OnscreenController
+## 3. Paramonos RPG Maker MV/MZ Cheat UI Plugin（功能扩展）
+
+- **项目地址**: https://github.com/paramonos/RPG-Maker-MV-MZ-Cheat-UI-Plugin
+- **作者**: paramonos
+- **用途**: 作弊 UI 功能扩展（禁用随机遇敌 / 强制战斗结果 / 游戏加速 / 自动跳过对话，已整合进 ArkRPG_CheatMenu.js）
+- **协议**: MIT License
+
+## 4. OnscreenController（虚拟手柄设计参考）
 
 - **项目地址**: https://github.com/glhaynes/OnscreenController
 - **作者**: Grady Haynes
 - **用途**: 虚拟手柄（虚拟键盘）的设计参考——全局触摸追踪视图 + D-Pad 9 区域映射 + 多点触控
 - **集成方式**: `VirtualGamepad.swift` 为 UIKit 重写版，参考其设计理念，非直接复制源码
-- **协议**: MIT License
-- **MIT License 原文摘要**:
-  > Copyright © 2023 Grady Haynes
-  >
-  > Permission is hereby granted, free of charge, to any person obtaining a copy
-  > of this software and associated documentation files (the "Software"), to deal
-  > in the Software without restriction, including without limitation the rights
-  > to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-  > copies of the Software, and to permit persons to whom the Software is
-  > furnished to do so, subject to the following conditions:
-  >
-  > The above copyright notice and this permission notice shall be included in all
-  > copies or substantial portions of the Software.
-
-## 3. Paramonos RPG Maker MV/MZ Cheat UI Plugin（设计参考，未直接集成）
-
-- **项目地址**: https://github.com/paramonos/RPG-Maker-MV-MZ-Cheat-UI-Plugin
-- **作者**: paramonos
-- **用途**: 作弊 UI 功能设计参考（Vue.js + Vuetify GUI 作弊面板）
-- **状态**: 因依赖 NW.js 运行时和 Vue/Vuetify 框架，未直接集成到 iOS 版本；功能设计上作为参考
 - **协议**: MIT License
 
 ---
