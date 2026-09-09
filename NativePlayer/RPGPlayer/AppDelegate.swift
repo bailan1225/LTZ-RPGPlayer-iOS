@@ -17,6 +17,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         ])
         createFirstRunStructure()
 
+        // 应用主题（换皮肤）
+        ThemeManager.shared.apply()
+
         let window = UIWindow(frame: UIScreen.main.bounds)
 
         // 去掉底部 Tab Bar，全部功能通过悬浮球/导航栏按钮访问

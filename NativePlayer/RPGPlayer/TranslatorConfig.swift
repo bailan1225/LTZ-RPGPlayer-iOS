@@ -246,3 +246,60 @@ enum ArkAudioJS {
         return s
     }
 }
+
+/// ArkRPG 全量兼容层：按依赖顺序加载所有剩余文件（音频解码/图片降采样/运行时翻译/视频/插件兼容）
+enum ArkFullCompatJS {
+    /// 按依赖顺序排列的文件名（不含扩展名）
+    private static let fileOrder: [String] = [
+        // 1. Vorbis .ogg 音频解码（iOS WebView 原生不支持 .ogg）
+        "stbvorbis_stream_asm",
+        "stbvorbis_stream",
+        "worklet-stbvorbis",
+        // 2. 音频流
+        "AudioStreaming",
+        "compat_AudioStreaming",
+        "N_X_AudioStreaming",
+        // 3. 图片降采样（减少内存/闪退）
+        "ArkImageDownsample",
+        "ArkImageDownsampleMZ",
+        // 4. 运行时 JSON 词典翻译
+        "RPGTextTranslation",
+        // 5. 内联视频
+        "inline_video",
+        // 6. 插件兼容层（按字母序）
+        "compat_ChimakiSpine",
+        "compat_DKTools_Localization",
+        "compat_Drill_LayerTiledGif",
+        "compat_Galv_QuestLog",
+        "compat_KNS_TalkPortrait",
+        "compat_PDX_KeybindingsRemap",
+        "compat_SAN_Imp_ColorCache",
+        "compat_SRD_GameUpgrade",
+        "compat_SRD_PreloaderCore",
+        "compat_TouchUI",
+        "compat_YEP_FpsSynchOption",
+        "compat_globalmap",
+        "compat_koffi_modmanager",
+        "compat_mv3d",
+        "compat_ParallelBgs",
+        "compat_pixi_apng"
+    ]
+
+    static var source: String {
+        var s = ""
+        for name in fileOrder {
+            if let url = Bundle.main.url(forResource: name, withExtension: "js"),
+               let t = try? String(contentsOf: url, encoding: .utf8) {
+                s += "/* === \(name).js === */\n" + t + "\n"
+            }
+        }
+        return s.isEmpty ? "// ArkFullCompatJS: no files found" : s
+    }
+
+    /// 已加载的文件数量（用于调试）
+    static var loadedCount: Int {
+        fileOrder.reduce(0) { count, name in
+            Bundle.main.url(forResource: name, withExtension: "js") != nil ? count + 1 : count
+        }
+    }
+}

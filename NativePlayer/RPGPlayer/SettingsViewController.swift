@@ -145,7 +145,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
 
     // MARK: - Table
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 5 }
+    override func numberOfSections(in tableView: UITableView) -> Int { 6 }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
@@ -153,7 +153,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 1: return 2
         case 2: return apiRows()
         case 3: return 3
-        case 4: return 0
+        case 4: return 1   // 主题（换皮肤）
+        case 5: return 0   // 版本信息
         default: return 0
         }
     }
@@ -181,6 +182,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             default: return "API 设置（当前：自定义API）"
             }
         case 3: return "翻译性能"
+        case 4: return "外观（换皮肤）"
         default: return nil
         }
     }
@@ -190,7 +192,8 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 0:
             return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：优先官方翻译工具端点 /v1/tools/translate（免费、自动识别源语言），解析失败自动回退免费对话模型 glm-4-flash-250414（健康 96）保证出译文。只需填 Key（acu.ltzy.top/console 创建，sk-）。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG Player」，优先于内置词典。"
-        case 4:
+        case 4: return "选择喜欢的主题颜色，即时生效。"
+        case 5:
             let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
             return "RPG Player v\(ver)（iOS 版 mtool）：批量翻译 / 校对 / 导出 / 内置播放 / 作弊 / 存档管理。翻译完的游戏可在「游戏」页播放或导出，映射自动存 translations/，供「RPG Player」离线使用。"
         default: return nil
@@ -275,6 +278,19 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             cell.textLabel?.text = "崩溃日志"
             cell.textLabel?.textColor = .systemBlue
             cell.accessoryType = .none
+        case (4, 0):
+            cell.textLabel?.text = "主题皮肤"
+            cell.detailTextLabel?.text = ThemeManager.shared.current.rawValue
+            cell.textLabel?.textColor = .label
+            cell.accessoryType = .disclosureIndicator
+            cell.selectionStyle = .default
+            // 右侧显示主题色预览
+            let colorView = UIView(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
+            colorView.backgroundColor = ThemeManager.shared.current.accent
+            colorView.layer.cornerRadius = 12
+            colorView.layer.borderWidth = 1
+            colorView.layer.borderColor = UIColor.lightGray.cgColor
+            cell.accessoryView = colorView
         default:
             break
         }
@@ -287,6 +303,31 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             let eng = engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine")
             let testRow = eng == 2 ? 4 : (eng == 3 ? 2 : (eng == 4 ? 1 : -1))
             if indexPath.row == testRow { testTapped() }
+            return
+        }
+        if indexPath.section == 4 {
+            // 主题选择
+            let sheet = UIAlertController(title: "选择主题皮肤", message: nil, preferredStyle: .actionSheet)
+            for theme in AppTheme.allCases {
+                let action = UIAlertAction(title: theme.rawValue, style: .default) { [weak self] _ in
+                    ThemeManager.shared.setTheme(theme)
+                    self?.tableView.reloadData()
+                    // 刷新导航栏
+                    self?.navigationController?.navigationBar.setNeedsLayout()
+                    self?.navigationController?.navigationBar.layoutIfNeeded()
+                }
+                // 已选主题显示勾选
+                if theme == ThemeManager.shared.current {
+                    action.setValue(true, forKey: "checked")
+                }
+                sheet.addAction(action)
+            }
+            sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
+            if let pop = sheet.popoverPresentationController {
+                pop.sourceView = view
+                pop.sourceRect = view.bounds
+            }
+            present(sheet, animated: true)
             return
         }
         guard indexPath.section == 3 else { return }

@@ -41,6 +41,8 @@ final class GamesViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "游戏"
+        // 应用主题
+        applyTheme()
         // 右侧：设置 + 导入
         let settingsBtn = UIBarButtonItem(
             image: UIImage(systemName: "gearshape"), style: .plain,
@@ -59,6 +61,17 @@ final class GamesViewController: UITableViewController {
         NotificationCenter.default.addObserver(
             self, selector: #selector(refresh),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        // 监听主题变化
+        ThemeManager.shared.onThemeChange = { [weak self] _ in
+            self?.applyTheme()
+            self?.tableView.reloadData()
+        }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        applyTheme()
+        tableView.reloadData()
     }
 
     private final class SubtitleCell: UITableViewCell {
