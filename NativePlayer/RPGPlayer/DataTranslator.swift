@@ -137,21 +137,12 @@ final class DataTranslator {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return false }
         guard t.contains(where: { $0.isLetter }) else { return false }
-        // 目标中文：判断是否已翻译
+        // 目标中文：只跳过已翻译为中文的文本，其他语言（日文/英文/韩文/纯汉字）都翻译
         if target.lowercased().hasPrefix("zh") {
-            let hasHiragana = t.unicodeScalars.contains { $0.value >= 0x3040 && $0.value <= 0x309F }
-            let hasKatakana = t.unicodeScalars.contains { $0.value >= 0x30A0 && $0.value <= 0x30FF }
-            let hasCJK = t.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FFF }
-            // 含假名 → 一定是日文，需要翻译
-            if hasHiragana || hasKatakana { return true }
-            // 含日文特有汉字 → 是日文，需要翻译
-            if hasCJK && t.contains(where: { jpSpecificChars.contains($0) }) { return true }
-            // 含中文特有字符 → 已翻译为中文，跳过
+            // 含中文特有字符（的/了/是/在/有 等）→ 已翻译为中文，跳过
             if t.contains(where: { zhSpecificChars.contains($0) }) { return false }
-            // 纯汉字且无法判断（可能是日文纯汉字词，也可能是中文）→ 保守翻译，缓存会去重
-            if hasCJK { return true }
-            // 纯英文/数字/符号 → 不需要翻译
-            return false
+            // 其他情况全部翻译：日文（假名/日文汉字）、英文、纯汉字、混合语言等
+            return true
         }
         return true
     }
