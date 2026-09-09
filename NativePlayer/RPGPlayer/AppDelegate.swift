@@ -19,19 +19,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
         let window = UIWindow(frame: UIScreen.main.bounds)
 
+        // 去掉底部 Tab Bar，全部功能通过悬浮球/导航栏按钮访问
         let gamesVC = GamesViewController()
-        gamesVC.tabBarItem = UITabBarItem(title: "游戏", image: UIImage(systemName: "gamecontroller"), selectedImage: nil)
+        let nav = UINavigationController(rootViewController: gamesVC)
 
-        let settingsVC = SettingsViewController()
-        settingsVC.tabBarItem = UITabBarItem(title: "设置", image: UIImage(systemName: "gearshape"), selectedImage: nil)
-
-        let tab = UITabBarController()
-        tab.viewControllers = [
-            UINavigationController(rootViewController: gamesVC),
-            UINavigationController(rootViewController: settingsVC)
-        ]
-
-        window.rootViewController = tab
+        window.rootViewController = nav
         window.makeKeyAndVisible()
         self.window = window
         return true

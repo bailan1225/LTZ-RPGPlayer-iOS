@@ -40,9 +40,14 @@ final class GamesViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "游戏翻译"
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
+        title = "游戏"
+        // 右侧：设置 + 导入
+        let settingsBtn = UIBarButtonItem(
+            image: UIImage(systemName: "gearshape"), style: .plain,
+            target: self, action: #selector(openSettings))
+        let importBtn = UIBarButtonItem(
             barButtonSystemItem: .add, target: self, action: #selector(importGame))
+        navigationItem.rightBarButtonItems = [importBtn, settingsBtn]
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "翻译文件", style: .plain, target: self, action: #selector(openTranslationFiles))
         phaseLabel.numberOfLines = 0
@@ -61,6 +66,10 @@ final class GamesViewController: UITableViewController {
             super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
         }
         required init?(coder: NSCoder) { fatalError() }
+    }
+
+    @objc private func openSettings() {
+        navigationController?.pushViewController(SettingsViewController(), animated: true)
     }
 
     @objc private func openTranslationFiles() {

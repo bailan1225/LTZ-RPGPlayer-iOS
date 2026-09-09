@@ -637,8 +637,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        // 虚拟手柄（方向键 + A/B）
-        let pad = VirtualGamepad(webView: webView)
+        // 虚拟手柄（方向键 + A/B/X/Y，参考 OnscreenController 开源设计）
+        let pad = VirtualGamepad()
+        pad.webView = webView
         pad.frame = view.bounds
         pad.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(pad)
@@ -717,6 +718,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         alert.addAction(UIAlertAction(title: "↻ 刷新游戏", style: .default) { [weak self] _ in self?.reload() })
         alert.addAction(UIAlertAction(title: trOn ? "💬 翻译：开（点此关闭）" : "💬 翻译：关（点此开启）", style: .default) { [weak self] _ in
             self?.toggleTranslate()
+        })
+        alert.addAction(UIAlertAction(title: "⚙️ 翻译设置", style: .default) { [weak self] _ in
+            self?.navigationController?.pushViewController(SettingsViewController(), animated: true)
         })
         alert.addAction(UIAlertAction(title: self.gamepadVisible ? "🎮 手柄：开（点此关闭）" : "🎮 手柄：关（点此开启）", style: .default) { [weak self] _ in
             self?.toggleGamepad()
