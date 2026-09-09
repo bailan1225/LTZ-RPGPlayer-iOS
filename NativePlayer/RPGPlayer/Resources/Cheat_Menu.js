@@ -1593,6 +1593,63 @@ Cheat_Menu.menus.splice(0, 0, function() {
 	Cheat_Menu.append_godmode_status();
 });
 
+// ===== App 功能菜单（rpgtransplayer 扩展：刷新/翻译/手柄/存档） =====
+Cheat_Menu.menus.splice(0, 0, function() {
+	Cheat_Menu.append_cheat_title("App 功能");
+
+	// 刷新游戏
+	Cheat_Menu.append_cheat("刷新游戏", "重新加载", 4, function() {
+		location.reload();
+	});
+
+	// 翻译开关
+	var trOn = false;
+	try { trOn = window.RPGTranslator && window.RPGTranslator.isEnabled ? window.RPGTranslator.isEnabled() : false; } catch(e) {}
+	Cheat_Menu.append_cheat("翻译", trOn ? "开（点此关闭）" : "关（点此开启）", 5, function() {
+		try {
+			if (window.RPGTranslator) {
+				var cur = window.RPGTranslator.isEnabled ? window.RPGTranslator.isEnabled() : false;
+				window.RPGTranslator.setEnabled(!cur);
+				if (!cur && window.RPGTranslator.resetSession) window.RPGTranslator.resetSession();
+			}
+		} catch(e) {}
+		Cheat_Menu.update_menu();
+	});
+
+	// 手柄开关
+	var padOn = false;
+	try { padOn = window.__gamepadVisible === true; } catch(e) {}
+	Cheat_Menu.append_cheat("虚拟手柄", padOn ? "开（点此关闭）" : "关（点此开启）", 6, function() {
+		try { if (window.__toggleGamepad) window.__toggleGamepad(); } catch(e) {}
+		Cheat_Menu.update_menu();
+	});
+
+	// 存档导出
+	Cheat_Menu.append_cheat("导出存档", "复制到剪贴板", 7, function() {
+		try {
+			if (window.RPGSave) {
+				var data = window.RPGSave.exportAll();
+				if (data && data !== "{}") {
+					if (window.__copyToClipboard) {
+						window.__copyToClipboard(data);
+					} else {
+						prompt("存档数据（全选复制）：", data);
+					}
+				} else {
+					alert("没有找到存档数据");
+				}
+			}
+		} catch(e) { alert("导出失败：" + e.message); }
+	});
+
+	// 关闭作弊菜单
+	Cheat_Menu.append_cheat("关闭菜单", "按 1 也可关闭", 0, function() {
+		Cheat_Menu.cheat_menu_open = false;
+		Cheat_Menu.overlay_box.remove();
+		Cheat_Menu.overlay.remove();
+	});
+});
+
 
 // update whats being displayed in menu
 Cheat_Menu.update_menu = function() {

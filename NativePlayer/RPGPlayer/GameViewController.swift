@@ -603,9 +603,32 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             })();
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 5) App 功能桥接（供作弊器菜单调用：切换手柄、复制到剪贴板）
+        contentController.addUserScript(WKUserScript(
+            source: """
+            (function(){
+              if (window.__appBridgeInstalled) return;
+              window.__appBridgeInstalled = true;
+              window.__gamepadVisible = false;
+              window.__toggleGamepad = function() {
+                try { window.webkit.messageHandlers.rpgApp.postMessage({action: 'toggleGamepad'}); } catch(e) {}
+              };
+              window.__copyToClipboard = function(text) {
+                try {
+                  var ta = document.createElement('textarea');
+                  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+                  document.body.appendChild(ta); ta.select();
+                  document.execCommand('copy'); document.body.removeChild(ta);
+                  alert('已复制到剪贴板');
+                } catch(e) { prompt('复制以下内容：', text); }
+              };
+            })();
+            """,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         contentController.add(self, name: "rpgTr")
         contentController.add(self, name: "rpgCheat")
         contentController.add(self, name: "rpgConsole")
+        contentController.add(self, name: "rpgApp")
 
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
@@ -711,23 +734,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func showBallMenu() {
-        let trOn = defaults.bool(forKey: "tr_enabled")
-        let alert = UIAlertController(title: "游戏菜单", message: nil, preferredStyle: .actionSheet)
-        // 常用选项
-        alert.addAction(UIAlertAction(title: "✕ 返回列表", style: .default) { [weak self] _ in self?.backToList() })
-        alert.addAction(UIAlertAction(title: "↻ 刷新游戏", style: .default) { [weak self] _ in self?.reload() })
-        alert.addAction(UIAlertAction(title: trOn ? "💬 翻译：开（点此关闭）" : "💬 翻译：关（点此开启）", style: .default) { [weak self] _ in
-            self?.toggleTranslate()
+        let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
+        // 悬浮球只保留两个功能：打开作弊器、关闭游戏
+        // 其他功能（刷新/翻译/手柄/存档）已并入作弊器的「App 功能」分类
+        alert.addAction(UIAlertAction(title: "🎮 打开作弊器", style: .default) { [weak self] _ in
+            self?.toggleCheat()
         })
-        alert.addAction(UIAlertAction(title: "⚙️ 翻译设置", style: .default) { [weak self] _ in
-            self?.navigationController?.pushViewController(SettingsViewController(), animated: true)
-        })
-        alert.addAction(UIAlertAction(title: self.gamepadVisible ? "🎮 手柄：开（点此关闭）" : "🎮 手柄：关（点此开启）", style: .default) { [weak self] _ in
-            self?.toggleGamepad()
-        })
-        // 更多选项
-        alert.addAction(UIAlertAction(title: "⋯ 更多（存档/作弊）", style: .default) { [weak self] _ in
-            self?.showMoreMenu()
+        alert.addAction(UIAlertAction(title: "✕ 关闭游戏", style: .destructive) { [weak self] _ in
+            self?.backToList()
         })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         if let pop = alert.popoverPresentationController, let ball = floatingBall {
@@ -883,6 +897,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     @objc private func toggleGamepad() {
         gamepadVisible.toggle()
         virtualGamepad?.isHidden = !gamepadVisible
+        webView.evaluateJavaScript("window.__gamepadVisible = \(gamepadVisible ? "true" : "false");", completionHandler: nil)
     }
 
     @objc private func reload() {
@@ -934,8 +949,14 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "rpgConsole", let text = message.body as? String {
-            // JS 控制台/报错进崩溃日志，供列表页「日志」查看定位问题
             CrashReporter.log("[js] " + text)
+            return
+        }
+        if message.name == "rpgApp", let dict = message.body as? [String: Any],
+           let action = dict["action"] as? String {
+            if action == "toggleGamepad" {
+                toggleGamepad()
+            }
             return
         }
         print("rpgTr:", message.body)
