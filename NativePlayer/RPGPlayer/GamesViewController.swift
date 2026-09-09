@@ -48,7 +48,7 @@ final class GamesViewController: UITableViewController {
             image: UIImage(systemName: "gearshape"), style: .plain,
             target: self, action: #selector(openSettings))
         let importBtn = UIBarButtonItem(
-            barButtonSystemItem: .add, target: self, action: #selector(importGame))
+            title: "导入", style: .plain, target: self, action: #selector(importGame))
         navigationItem.rightBarButtonItems = [importBtn, settingsBtn]
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "翻译文件", style: .plain, target: self, action: #selector(openTranslationFiles))

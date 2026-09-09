@@ -248,6 +248,28 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                     CrashReporter.log("scheme 404→index hit: \(rel) -> \(hit.lastPathComponent)")
                     return
                 }
+                // 格式回退：请求加密格式(.rpgmvm/.rpgmvp/.rpgmvo)但文件不存在时，
+                // 尝试未加密格式(.ogg/.m4a/.png/.jpg)。部分游戏 System.json 标记了加密，
+                // 但实际音频/图片文件未加密。
+                let extMap = [
+                    "rpgmvm": ["ogg", "m4a", "mp3", "wav"],
+                    "rpgmvo": ["ogg", "m4a", "mp3"],
+                    "rpgmvp": ["png", "jpg", "jpeg", "webp"]
+                ]
+                let reqExt = fileURL.pathExtension.lowercased()
+                if let fallbacks = extMap[reqExt] {
+                    let baseName = fileURL.deletingPathExtension().lastPathComponent
+                    for fbExt in fallbacks {
+                        let fbName = "\(baseName).\(fbExt)".lowercased()
+                        if let hit = self.fileIndex[fbName], let data = try? Data(contentsOf: hit) {
+                            let mime = self.mimeType(fbExt)
+                            let response = Self.makeHTTPResponse(url: url, mime: mime, length: data.count)
+                            self.succeedTask(urlSchemeTask, response: response, data: data)
+                            CrashReporter.log("scheme ext-fallback: \(rel) -> \(hit.lastPathComponent)")
+                            return
+                        }
+                    }
+                }
                 let indexCount = self.fileIndex.count
                 let hasName = self.fileIndex[name] != nil
                 CrashReporter.log("scheme 404: \(rel) | index:\(indexCount) nameMatch:\(hasName)")
@@ -750,10 +772,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     private func showBallMenu() {
         let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
-        // 悬浮球只保留两个功能：打开作弊器、关闭游戏
-        // 其他功能（刷新/翻译/手柄/存档）已并入作弊器的「App 功能」分类
         alert.addAction(UIAlertAction(title: "🎮 打开作弊器", style: .default) { [weak self] _ in
             self?.toggleCheat()
+        })
+        alert.addAction(UIAlertAction(title: "💾 存档管理", style: .default) { [weak self] _ in
+            self?.saveMenu()
         })
         alert.addAction(UIAlertAction(title: "✕ 关闭游戏", style: .destructive) { [weak self] _ in
             self?.backToList()
