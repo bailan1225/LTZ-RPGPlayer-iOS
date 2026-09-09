@@ -929,7 +929,23 @@
                                 resizeTo: function() {}, moveTo: function() {},
                                 setAlwaysOnTop: function() {},
                                 width: window.innerWidth, height: window.innerHeight, x: 0, y: 0,
-                                scale: { x: 1, y: 1 }, menu: null
+                                scale: { x: 1, y: 1 }, menu: null,
+                                // 额外属性：部分插件访问 win.window / win.document / win.location
+                                window: window,
+                                document: document,
+                                location: location,
+                                isFullscreen: function() { return false; },
+                                isMaximized: function() { return false; },
+                                isMinimized: function() { return false; },
+                                setResizable: function() {},
+                                setAlwaysOnTop: function() {},
+                                moveBy: function() {},
+                                resizeBy: function() {},
+                                setMinimumSize: function() {},
+                                setMaximumSize: function() {},
+                                show: function() {},
+                                hide: function() {},
+                                isVisible: function() { return true; }
                             };
                         },
                         open: function(url) { try { window.open(url); } catch(_){} }

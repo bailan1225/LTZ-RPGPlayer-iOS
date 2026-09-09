@@ -39,11 +39,24 @@
     }
   };
 
-  // require 白名单占位（fs/path 在 common_* 中提供）
+  // require 白名单占位（fs/path 在 common_* 中提供，nw.gui 等返回空对象避免插件崩溃）
   if (typeof window.require !== 'function') {
     window.require = function (name) {
       console.warn('[require] stub called:', name);
       const modules = (window.require.modules = window.require.modules || {});
+      // NW.js 常见模块：返回空对象，避免 YEP_CoreEngine 等插件崩溃
+      if (name === 'nw.gui' || name === 'nw' || name === 'gui') {
+        if (!modules[name]) {
+          modules[name] = {
+            Window: { get: function () { return { on: function () {}, show: function () {}, hide: function () {}, close: function () {} }; } },
+            Menu: function () { return { append: function () {}, popup: function () {} }; },
+            MenuItem: function () {},
+            Clipboard: { get: function () { return { set: function () {}, get: function () { return ''; } }; } },
+            Shell: { openExternal: function (url) { console.log('[nw.gui.Shell.openExternal]', url); } }
+          };
+        }
+        return modules[name];
+      }
       return modules[name];
     };
   }
