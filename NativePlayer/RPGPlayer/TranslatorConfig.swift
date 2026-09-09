@@ -89,3 +89,14 @@ enum CheatMenuJS {
         return s
     }
 }
+
+/// 读取内置 ArkOptimizations.js（整合 ArkRPG 开源项目的核心优化：视口/坐标/性能/纹理GC/输入映射）
+enum ArkOptimizationsJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "ArkOptimizations", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// ArkOptimizations.js missing"
+        }
+        return s
+    }
+}

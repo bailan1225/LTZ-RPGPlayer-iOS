@@ -390,6 +390,11 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             """,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
+        // 0.5) 注入 ArkRPG 核心优化（视口/坐标修复/性能/纹理GC/输入映射，必须在游戏脚本之前）
+        contentController.addUserScript(WKUserScript(
+            source: ArkOptimizationsJS.source,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+
         // 1) 注入翻译配置（在游戏脚本之前）
         contentController.addUserScript(WKUserScript(
             source: TranslatorConfig.injectionSource(),
