@@ -348,9 +348,10 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         forceOrientation(.landscapeLeft)
-        // 横屏游戏：隐藏导航栏（返回按钮+标题占空间），点击游戏区域可呼出工具栏
+        // 横屏游戏：隐藏导航栏，禁用侧滑返回（只允许悬浮球退出）
         navigationController?.setNavigationBarHidden(true, animated: false)
         navigationController?.hidesBarsOnTap = true
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = false
     }
 
     override func viewWillDisappear(_ animated: Bool) {

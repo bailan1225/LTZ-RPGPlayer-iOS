@@ -103,16 +103,33 @@ final class VirtualGamepad: UIView {
 
 final class GamepadButton: UIButton {
     let key: String
+    let keyCode: Int
     private var repeatTimer: Timer?
 
     init(key: String) {
         self.key = key
+        // RPG Maker MV/MZ 用 keyCode 判断按键
+        self.keyCode = GamepadButton.keyCode(for: key)
         super.init(frame: .zero)
         addTarget(self, action: #selector(down), for: .touchDown)
         addTarget(self, action: #selector(up), for: [.touchUpInside, .touchUpOutside, .touchCancel])
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    private static func keyCode(for key: String) -> Int {
+        switch key {
+        case "ArrowUp": return 38
+        case "ArrowDown": return 40
+        case "ArrowLeft": return 37
+        case "ArrowRight": return 39
+        case "Enter": return 13
+        case "Escape": return 27
+        case "Shift": return 16
+        case "F9": return 120
+        default: return 0
+        }
+    }
 
     @objc private func down() {
         backgroundColor = backgroundColor?.withAlphaComponent(0.5)
@@ -139,6 +156,8 @@ final class GamepadButton: UIButton {
           var ev = new KeyboardEvent('\(type)', {
             key: '\(key)', code: '\(key)', bubbles: true, cancelable: true
           });
+          Object.defineProperty(ev, 'keyCode', {value: \(keyCode)});
+          Object.defineProperty(ev, 'which', {value: \(keyCode)});
           window.dispatchEvent(ev);
           document.dispatchEvent(ev);
         })();
