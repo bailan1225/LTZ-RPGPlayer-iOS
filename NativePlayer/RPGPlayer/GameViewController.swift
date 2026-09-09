@@ -415,19 +415,16 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             source: ArkOptimizationsJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
 
-        // 0.6) 注入 ArkRPG 完整兼容层（按依赖顺序：core -> crypto -> fs -> media -> storage -> syncXHR -> pixi -> webgl -> bootstrap -> gameMedia -> pluginParams -> audio -> fullCompat）
+        // 0.6) 注入 ArkRPG 完整兼容层（按依赖顺序：core -> crypto -> fs -> media -> mvCompat -> mzCompat -> syncXHR -> pixi -> audio -> fullCompat）
         let arkLayers = [
             ArkCoreJS.source,           // Utils.isNwjs 拦截 + PIXI 渲染器崩溃回退（必须最早）
             ArkCryptoJS.source,         // SHA-256/AES-CBC polyfill
             ArkFSJS.source,             // Node fs 模块 polyfill
             ArkMediaJS.source,          // 媒体模块 polyfill
-            ArkStorageJS.source,        // MV/MZ 存档处理 polyfill
+            ArkMVCompatJS.source,       // MV 兼容包：存档+媒体+插件参数（含环境判断，仅MV执行）
+            ArkMZCompatJS.source,       // MZ 兼容包：存档+媒体+插件参数+WebGL+启动（含环境判断，仅MZ执行）
             ArkSyncXHRJS.source,        // 同步 XHR 修复
             ArkPixiTextureFixJS.source, // PIXI 基础纹理修复
-            ArkMZWebGLCompatJS.source,  // MZ WebGL 兼容
-            ArkMZBootstrapJS.source,    // MZ 启动修复
-            ArkGameMediaJS.source,      // MV/MZ 媒体修复
-            ArkPluginParamsJS.source,   // 插件参数修复
             ArkAudioJS.source,          // 音频修复（iOS/macOS）
             ArkFullCompatJS.source      // 全量兼容：Vorbis解码/图片降采样/运行时翻译/视频/插件兼容
         ]
