@@ -812,12 +812,13 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func saveMenu() {
-        let alert = UIAlertController(title: "存档管理", message: "导出当前游戏存档为 JSON 文件，或用 JSON 文件恢复存档", preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "导出存档", style: .default) { [weak self] _ in self?.exportSave() })
+        let alert = UIAlertController(title: "存档管理", message: "导出为标准 .rpgsave 文件（可被其他 RPG Maker 播放器直接使用），或导入存档", preferredStyle: .actionSheet)
+        alert.addAction(UIAlertAction(title: "导出存档（.rpgsave）", style: .default) { [weak self] _ in self?.exportSave() })
         alert.addAction(UIAlertAction(title: "导入存档…", style: .default) { [weak self] _ in self?.importSave() })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.barButtonItem = toolbarItems?.filter { $0.accessibilityLabel == "存档导入导出" }.first
+        if let pop = alert.popoverPresentationController, let ball = floatingBall {
+            pop.sourceView = ball
+            pop.sourceRect = ball.bounds
         }
         present(alert, animated: true)
     }
@@ -829,21 +830,42 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
                 self.alert("导出失败", "游戏页面尚未就绪或没有可导出的存档。")
                 return
             }
+            // 解析 {"RPGMV file1": "...", ...} 格式，导出为标准 .rpgsave 文件
+            guard let data = json.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                  !dict.isEmpty else {
+                self.alert("导出失败", "没有找到存档数据。")
+                return
+            }
             let df = DateFormatter()
             df.dateFormat = "yyyyMMdd_HHmmss"
-            let file = self.savesDir.appendingPathComponent("save_\(df.string(from: Date())).json")
-            do {
-                try json.write(to: file, atomically: true, encoding: .utf8)
-                CrashReporter.log("save exported: \(file.lastPathComponent)")
-                self.alert("已导出", "\(file.lastPathComponent)\n\n打开「文件」App → 我的 iPhone → RPGPlayer → Saves → \(self.savesDir.lastPathComponent) 即可取走。")
-            } catch {
-                self.alert("导出失败", error.localizedDescription)
+            let timestamp = df.string(from: Date())
+            var exported = 0
+            for (key, value) in dict {
+                // key 格式: "RPGMV file1" 或 "RPGMV global"
+                let fileName = key.replacingOccurrences(of: "RPGMV ", with: "")
+                // file1 -> file1.rpgsave, global -> global.rpgsave
+                let saveFile = self.savesDir.appendingPathComponent("\(fileName)_\(timestamp).rpgsave")
+                do {
+                    try value.write(to: saveFile, atomically: true, encoding: .utf8)
+                    exported += 1
+                } catch {
+                    CrashReporter.log("save export error: \(error.localizedDescription)")
+                }
+            }
+            if exported > 0 {
+                CrashReporter.log("save exported: \(exported) .rpgsave files")
+                self.alert("已导出", "导出 \(exported) 个存档文件到：\n\n文件 App → 我的 iPhone → rpgtransplayer → Saves → \(self.savesDir.lastPathComponent)\n\n格式为标准 .rpgsave，可被其他 RPG Maker 播放器直接使用。")
+            } else {
+                self.alert("导出失败", "无法写入存档文件。")
             }
         }
     }
 
     private func importSave() {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json])
+        // 支持 .rpgsave 和 .json 两种格式
+        let types: [UTType] = [.data, .json]
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
         picker.delegate = self
         present(picker, animated: true)
     }
@@ -852,11 +874,30 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         guard let url = urls.first else { return }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let json = try? String(contentsOf: url, encoding: .utf8) else {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
             alert("导入失败", "无法读取所选文件。")
             return
         }
-        let b64 = Data(json.utf8).base64EncodedString()
+        // 判断文件格式：.rpgsave 单文件 vs .json 批量导出
+        let ext = url.pathExtension.lowercased()
+        var jsonToImport = content
+        if ext == "rpgsave" || ext == "save" {
+            // 单个 .rpgsave 文件：从文件名提取存档槽位（file1, file2...），构造批量格式
+            let fileName = url.deletingPathExtension().lastPathComponent
+            // 支持 file1、file1_20240101、save1 等命名
+            var slot = "file1"
+            if let range = fileName.range(of: "file\\d+", options: .regularExpression) {
+                slot = String(fileName[range])
+            } else if let range = fileName.range(of: "\\d+", options: .regularExpression) {
+                slot = "file\(fileName[range])"
+            }
+            let dict: [String: String] = ["RPGMV \(slot)": content]
+            if let data = try? JSONSerialization.data(withJSONObject: dict),
+               let str = String(data: data, encoding: .utf8) {
+                jsonToImport = str
+            }
+        }
+        let b64 = Data(jsonToImport.utf8).base64EncodedString()
         webView.evaluateJavaScript("window.RPGSave.importBase64('\(b64)')") { [weak self] result, err in
             guard let self = self else { return }
             if let msg = result as? String {
