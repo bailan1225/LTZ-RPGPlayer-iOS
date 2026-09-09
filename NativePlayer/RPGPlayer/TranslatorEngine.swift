@@ -270,29 +270,43 @@ final class TranslatorEngine {
         return config.prompt + " " + langLine
     }
 
+    /// 判断字符串是否像有效译文（排除语言代码、太短、纯ASCII短码）
+    private func isValidTranslation(_ t: String, original: String) -> Bool {
+        let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty, s != original else { return false }
+        guard s.count >= 3 else { return false }  // 排除 zh/en/ja 等两字母语言代码
+        let langCodes: Set<String> = ["zh", "en", "ja", "ko", "fr", "de", "ru", "es",
+                                       "zh-cn", "zh-tw", "en-us", "en-gb", "ja-jp", "ko-kr",
+                                       "auto", "zh_cn", "zh_tw"]
+        if langCodes.contains(s.lowercased()) { return false }
+        let isPureAscii = s.unicodeScalars.allSatisfy { $0.value < 128 }
+        if isPureAscii && s.count <= 5 { return false }  // 排除状态码/短码
+        return true
+    }
+
     /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种格式 + 递归兜底提取译文 + 失败诊断）
     private func parseToolTranslate(_ data: Data, original: String) -> String? {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             for k in ["translation", "translatedText", "translated_text", "text", "result", "output", "dst", "content", "message"] {
-                if let v = obj[k] as? String, !v.isEmpty, v != original { return v }
+                if let v = obj[k] as? String, isValidTranslation(v, original: original) { return v }
             }
-            if let v = obj["data"] as? String, !v.isEmpty, v != original { return v }
+            if let v = obj["data"] as? String, isValidTranslation(v, original: original) { return v }
             if let d = obj["data"] as? [String: Any] {
                 for k in ["text", "translation", "translatedText", "translated_text", "output", "result", "dst"] {
-                    if let v = d[k] as? String, !v.isEmpty, v != original { return v }
+                    if let v = d[k] as? String, isValidTranslation(v, original: original) { return v }
                 }
                 if let arr = d["translations"] as? [[String: Any]] {
                     for x in arr {
-                        if let t = x["translatedText"] as? String, !t.isEmpty { return t }
-                        if let t = x["text"] as? String, !t.isEmpty, t != original { return t }
+                        if let t = x["translatedText"] as? String, isValidTranslation(t, original: original) { return t }
+                        if let t = x["text"] as? String, isValidTranslation(t, original: original) { return t }
                     }
                 }
-                if let arr = d["translations"] as? [String], let t = arr.first, !t.isEmpty, t != original { return t }
+                if let arr = d["translations"] as? [String], let t = arr.first, isValidTranslation(t, original: original) { return t }
             }
             if let choices = obj["choices"] as? [[String: Any]],
                let first = choices.first,
                let msg = first["message"] as? [String: Any],
-               let c = msg["content"] as? String, !c.isEmpty { return c }
+               let c = msg["content"] as? String, isValidTranslation(c, original: original) { return c }
             if let e = obj["error"] as? [String: Any] {
                 let m = (e["message"] as? String) ?? "未知错误"
                 lastError = m
@@ -303,7 +317,7 @@ final class TranslatorEngine {
             var best: String?
             var bestScore = 0
             collectTranslationCandidates(obj, original: original, into: &best, score: &bestScore)
-            if let b = best { return b }
+            if let b = best, isValidTranslation(b, original: original) { return b }
             // 诊断：响应格式未识别，把原文存进 lastError 供设置页「测试翻译连接」展示
             let raw = String(data: data, encoding: .utf8) ?? ""
             lastError = "响应格式未识别：\(String(raw.prefix(200)))"
@@ -311,25 +325,36 @@ final class TranslatorEngine {
             return nil
         }
         let t = String(data: data, encoding: .utf8) ?? ""
-        if !t.isEmpty, t != original { return t }
+        if isValidTranslation(t, original: original) { return t }
         lastError = "空响应"
         return nil
     }
 
-    /// 递归收集"像译文"的字符串：跳过元数据键，排除原文回显/URL/纯数字，取最长
+    /// 递归收集"像译文"的字符串：跳过元数据键，排除原文回显/URL/纯数字/语言代码，取最长
     private func collectTranslationCandidates(_ any: Any, original: String,
                                               into best: inout String?, score: inout Int) {
         if let s = any as? String {
             let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard t.count >= 2, t != original, !t.contains("://"),
+            // 排除：太短（<3字符，排除 zh/en/ja 等两字母语言代码）、原文回显、URL、JSON片段
+            guard t.count >= 3, t != original, !t.contains("://"),
                   !t.contains("{"), !t.contains("[") else { return }
+            // 排除纯ASCII且长度<=5的字符串（语言代码、状态码等元数据）
+            let isPureAscii = t.unicodeScalars.allSatisfy { $0.value < 128 }
+            if isPureAscii && t.count <= 5 { return }
+            // 排除常见语言代码
+            let langCodes: Set<String> = ["zh", "en", "ja", "ko", "fr", "de", "ru", "es",
+                                           "zh-cn", "zh-tw", "en-us", "en-gb", "ja-jp", "ko-kr",
+                                           "auto", "zh_cn", "zh_tw"]
+            if langCodes.contains(t.lowercased()) { return }
             if t.count > score { score = t.count; best = t }
             return
         }
         if let d = any as? [String: Any] {
             let skipKeys: Set<String> = ["error", "message", "code", "status", "type", "id",
                                          "model", "object", "created", "usage", "role",
-                                         "finish_reason", "help", "hint", "version", "url"]
+                                         "finish_reason", "help", "hint", "version", "url",
+                                         "to", "from", "source", "target", "detected_language",
+                                         "source_language", "target_language", "lang"]
             for (k, v) in d where !skipKeys.contains(k) {
                 collectTranslationCandidates(v, original: original, into: &best, score: &score)
             }
