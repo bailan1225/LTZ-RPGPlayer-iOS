@@ -68,12 +68,23 @@ enum TranslatorJS {
     }
 }
 
-/// 读取内置 Cheat.js 注入脚本
+/// 读取内置 Cheat.js 注入脚本（保留备用）
 enum CheatJS {
     static var source: String {
         guard let url = Bundle.main.url(forResource: "Cheat", withExtension: "js"),
               let s = try? String(contentsOf: url, encoding: .utf8) else {
             return "// Cheat.js missing"
+        }
+        return s
+    }
+}
+
+/// 读取内置 Cheat_Menu.js（RPGMakerCheatMenu 开源项目，ArkRPG 同款）
+enum CheatMenuJS {
+    static var source: String {
+        guard let url = Bundle.main.url(forResource: "Cheat_Menu", withExtension: "js"),
+              let s = try? String(contentsOf: url, encoding: .utf8) else {
+            return "// Cheat_Menu.js missing"
         }
         return s
     }

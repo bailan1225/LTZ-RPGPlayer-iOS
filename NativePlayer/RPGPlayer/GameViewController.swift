@@ -398,10 +398,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         contentController.addUserScript(WKUserScript(
             source: TranslatorJS.source,
             injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        // 3) 注入作弊器脚本
-        contentController.addUserScript(WKUserScript(
-            source: CheatJS.source,
-            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // 3) 作弊器不在此注入（Cheat_Menu.js 需要 hook DataManager，在页面加载完成后延迟注入）
         // 4) 注入存档桥接（导出/导入 MV/MZ 的 localStorage 存档，key 以 RPGMV 开头）
         contentController.addUserScript(WKUserScript(
             source: """
@@ -867,7 +864,16 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     @objc private func toggleCheat() {
-        webView.evaluateJavaScript("window.RPGCheat && window.RPGCheat.toggle();") { _, _ in }
+        // RPGMakerCheatMenu：模拟按数字键1打开/关闭作弊菜单
+        let js = """
+        (function(){
+          var ev = new KeyboardEvent('keydown', {key:'1', code:'Digit1', bubbles:true, cancelable:true});
+          Object.defineProperty(ev, 'keyCode', {value: 49});
+          Object.defineProperty(ev, 'which', {value: 49});
+          window.dispatchEvent(ev);
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     @objc private func toggleGamepad() {
@@ -937,6 +943,24 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         hideLoading()
         loadingDeadline?.cancel()
         CrashReporter.log("page didFinish navigation")
+        // 延迟注入 RPGMakerCheatMenu（需要 DataManager 已加载）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.injectCheatMenu()
+        }
+    }
+
+    private func injectCheatMenu() {
+        let src = CheatMenuJS.source
+        let js = """
+        (function(){
+          if (window.__cheatMenuInjected) return;
+          window.__cheatMenuInjected = true;
+          try {
+            \(src)
+          } catch(e) { console.log('CheatMenu inject error:', e); }
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
     }
 
     /// WebContent 进程被终止（通常是内存不足）
