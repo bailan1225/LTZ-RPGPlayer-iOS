@@ -841,6 +841,82 @@
         }
     };
 
+    // 安全对象包装器：用 Proxy 确保任何未定义属性访问都返回安全的空函数/对象，
+    // 彻底避免插件访问 nw.gui 不存在的属性时 TypeError。
+    function makeSafeObject(target) {
+        target = target || {};
+        if (typeof Proxy === 'undefined') {
+            // 旧浏览器不支持 Proxy：返回原对象（已包含常用属性）
+            return target;
+        }
+        return new Proxy(target, {
+            get: function(obj, prop) {
+                if (prop in obj) return obj[prop];
+                if (prop === Symbol.toPrimitive || prop === Symbol.iterator) return undefined;
+                if (prop === 'then') return undefined; // 避免被当成 Promise
+                // 未定义属性返回一个可调用、可访问的安全对象
+                var safe = function() { return makeSafeObject({}); };
+                return makeSafeObject(safe);
+            },
+            set: function(obj, prop, value) {
+                obj[prop] = value;
+                return true;
+            }
+        });
+    }
+
+    function makeSafeWindow() {
+        var win = {
+            _events: {},
+            on: function(event, listener) {
+                if (typeof listener !== 'function') return this;
+                this._events[event] = this._events[event] || [];
+                this._events[event].push(listener);
+                return this;
+            },
+            addListener: function(e, l) { return this.on(e, l); },
+            removeListener: function(event, listener) {
+                var list = this._events[event];
+                if (list) {
+                    var idx = list.indexOf(listener);
+                    if (idx !== -1) list.splice(idx, 1);
+                }
+                return this;
+            },
+            removeAllListeners: function(event) {
+                if (event) this._events[event] = [];
+                else this._events = {};
+                return this;
+            },
+            emit: function(event) {
+                var list = this._events[event];
+                if (!list || !list.length) return false;
+                var args = Array.prototype.slice.call(arguments, 1);
+                list.slice().forEach(function(fn) { try { fn.apply(null, args); } catch(e) {} });
+                return true;
+            },
+            close: function() { try { window.close(); } catch(_){} },
+            reload: function() { location.reload(); },
+            maximize: function() {}, minimize: function() {}, restore: function() {},
+            focus: function() {}, blur: function() {}, show: function() {}, hide: function() {},
+            enterFullscreen: function() {}, leaveFullscreen: function() {}, toggleFullscreen: function() {},
+            showDevTools: function() {}, closeDevTools: function() {},
+            isDevToolsOpen: function() { return false; },
+            isFullscreen: function() { return false; },
+            isMaximized: function() { return false; },
+            isMinimized: function() { return false; },
+            isVisible: function() { return true; },
+            isClosing: function() { return false; },
+            resizeTo: function() {}, moveTo: function() {}, resizeBy: function() {}, moveBy: function() {},
+            setResizable: function() {}, setAlwaysOnTop: function() {}, setCloseListener: function() {},
+            setMinimumSize: function() {}, setMaximumSize: function() {}, lockPosition: function() {},
+            width: window.innerWidth, height: window.innerHeight, x: 0, y: 0,
+            scale: { x: 1, y: 1 }, menu: null,
+            window: window, document: document, location: location
+        };
+        return makeSafeObject(win);
+    }
+
     if (typeof window.require === 'undefined') {
         window.require = function(moduleName) {
             console.log("[Polyfill] require called for: " + moduleName);
@@ -874,79 +950,12 @@
                 // MV 引擎排除了 common_nw.js，此处提供内联最小 mock，
                 // 防止插件（MovieManager.js、Community_Basic.js 等）直接调用
                 // require('nw.gui').Window.get() 时因返回 {} 而崩溃。
-                return {
+                // 使用 Proxy 包装：任何未定义的属性访问都返回安全的空函数/对象，
+                // 彻底避免 TypeError: undefined is not an object。
+                var nwGuiTarget = {
                     Window: {
                         get: function() {
-                            return {
-                                // --- EventEmitter (win.on / win.removeAllListeners etc.) ---
-                                _events: {},
-                                on: function(event, listener) {
-                                    if (typeof listener !== 'function') return this;
-                                    this._events[event] = this._events[event] || [];
-                                    this._events[event].push(listener);
-                                    return this;
-                                },
-                                addListener: function(event, listener) { return this.on(event, listener); },
-                                once: function(event, listener) {
-                                    var self = this;
-                                    if (typeof listener !== 'function') return this;
-                                    function wrapper() {
-                                        try { listener.apply(null, arguments); } catch(e) {}
-                                        self.removeListener(event, wrapper);
-                                    }
-                                    return this.on(event, wrapper);
-                                },
-                                removeListener: function(event, listener) {
-                                    var list = this._events[event];
-                                    if (!list) return this;
-                                    var idx = list.indexOf(listener);
-                                    if (idx !== -1) list.splice(idx, 1);
-                                    return this;
-                                },
-                                off: function(event, listener) { return this.removeListener(event, listener); },
-                                removeAllListeners: function(event) {
-                                    if (event) this._events[event] = [];
-                                    else this._events = {};
-                                    return this;
-                                },
-                                emit: function(event) {
-                                    var list = this._events[event];
-                                    if (!list || !list.length) return false;
-                                    var args = Array.prototype.slice.call(arguments, 1);
-                                    list.slice().forEach(function(fn) { try { fn.apply(null, args); } catch(e) {} });
-                                    return true;
-                                },
-                                // --- Window API ---
-                                close: function() { try { window.close(); } catch(_){} },
-                                maximize: function() {}, minimize: function() {},
-                                restore: function() {}, focus: function() {}, blur: function() {},
-                                enterFullscreen: function() {}, leaveFullscreen: function() {},
-                                toggleFullscreen: function() {}, showDevTools: function() {},
-                                closeDevTools: function() {}, isDevToolsOpen: function() { return false; },
-                                isClosing: function() { return false; }, setCloseListener: function() {},
-                                lockPosition: function() {},
-                                reload: function() { location.reload(); },
-                                resizeTo: function() {}, moveTo: function() {},
-                                setAlwaysOnTop: function() {},
-                                width: window.innerWidth, height: window.innerHeight, x: 0, y: 0,
-                                scale: { x: 1, y: 1 }, menu: null,
-                                // 额外属性：部分插件访问 win.window / win.document / win.location
-                                window: window,
-                                document: document,
-                                location: location,
-                                isFullscreen: function() { return false; },
-                                isMaximized: function() { return false; },
-                                isMinimized: function() { return false; },
-                                setResizable: function() {},
-                                setAlwaysOnTop: function() {},
-                                moveBy: function() {},
-                                resizeBy: function() {},
-                                setMinimumSize: function() {},
-                                setMaximumSize: function() {},
-                                show: function() {},
-                                hide: function() {},
-                                isVisible: function() { return true; }
-                            };
+                            return makeSafeWindow();
                         },
                         open: function(url) { try { window.open(url); } catch(_){} }
                     },
@@ -958,10 +967,11 @@
                         closeAllWindows: function() { try { window.close(); } catch(_){} }
                     },
                     Shell: { openExternal: function() {}, openItem: function() {} },
-                    Menu: function() { return { append: function() {}, popup: function() {}, remove: function() {} }; },
+                    Menu: function() { return makeSafeObject({ append: function() {}, popup: function() {}, remove: function() {} }); },
                     MenuItem: function(o) { return o || {}; },
-                    Clipboard: { get: function() { return { get: function() { return ''; }, set: function() {} }; } }
+                    Clipboard: { get: function() { return makeSafeObject({ get: function() { return ''; }, set: function() {} }); } }
                 };
+                return makeSafeObject(nwGuiTarget);
             }
             if (moduleName === 'koffi' || moduleName.endsWith('/koffi') || moduleName.includes('koffi/')) {
                 console.log('[Polyfill] Mocking koffi for: ' + moduleName);
