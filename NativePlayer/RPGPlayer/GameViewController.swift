@@ -663,6 +663,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         contentController.add(self, name: "rpgCheat")
         contentController.add(self, name: "rpgConsole")
         contentController.add(self, name: "rpgApp")
+        contentController.add(self, name: "nativeBridge")
 
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
@@ -1008,12 +1009,30 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             CrashReporter.log("[js] " + text)
             return
         }
+        if message.name == "nativeBridge", let dict = message.body as? [String: Any],
+           let type = dict["type"] as? String {
+            if type == "save", let filename = dict["filename"] as? String,
+               let data = dict["data"] as? String {
+                saveSaveFile(filename, data: data)
+            }
+            return
+        }
         if message.name == "rpgApp", let dict = message.body as? [String: Any],
            let action = dict["action"] as? String {
             // App 功能桥接（预留）
             return
         }
         print("rpgTr:", message.body)
+    }
+
+    private func saveSaveFile(_ filename: String, data: String) {
+        do {
+            try FileManager.default.createDirectory(at: savesDir, withIntermediateDirectories: true)
+            let fileURL = savesDir.appendingPathComponent(filename)
+            try data.write(to: fileURL, atomically: true, encoding: .utf8)
+        } catch {
+            CrashReporter.log("saveSaveFile error: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - WKNavigationDelegate
@@ -1072,6 +1091,22 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String,
                  defaultText: String?, initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping (String?) -> Void) {
+        // 拦截存档原生桥接命令，不显示弹窗
+        if prompt.hasPrefix("__NATIVE_LOAD__:") {
+            let filename = String(prompt.dropFirst("__NATIVE_LOAD__:".count))
+            completionHandler(loadSaveFile(filename))
+            return
+        }
+        if prompt.hasPrefix("__NATIVE_EXISTS__:") {
+            let filename = String(prompt.dropFirst("__NATIVE_EXISTS__:".count))
+            completionHandler(saveFileExists(filename) ? "1" : "")
+            return
+        }
+        if prompt == "__NATIVE_SAVE_INDEX__" {
+            completionHandler(getSaveIndex())
+            return
+        }
+        // 作弊器 prompt 输入
         let alert = UIAlertController(title: "作弊器输入", message: prompt, preferredStyle: .alert)
         alert.addTextField { tf in
             tf.text = defaultText ?? ""
@@ -1083,6 +1118,31 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in completionHandler(nil) })
         present(alert, animated: true)
+    }
+
+    // MARK: - 存档原生桥接
+
+    private func loadSaveFile(_ filename: String) -> String {
+        let fileURL = savesDir.appendingPathComponent(filename)
+        guard let data = try? Data(contentsOf: fileURL),
+              let content = String(data: data, encoding: .utf8) else {
+            return ""
+        }
+        return content
+    }
+
+    private func saveFileExists(_ filename: String) -> Bool {
+        let fileURL = savesDir.appendingPathComponent(filename)
+        return FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
+    private func getSaveIndex() -> String {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(atPath: savesDir.path) else {
+            return "[]"
+        }
+        let saveFiles = files.filter { $0.hasPrefix("file") || $0.hasPrefix("global") || $0.hasPrefix("config") }
+        return try? JSONSerialization.data(withJSONObject: saveFiles).base64EncodedString() ?? "[]"
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
