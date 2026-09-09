@@ -2,6 +2,29 @@
   'use strict';
   // 统一 MZ 媒体行为：初始化/解锁 AudioContext，监听媒体错误并尽量不中断游戏流程。
 
+  // 只在 MZ 环境下执行
+  function isMZ() {
+    if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+      return Utils.RPGMAKER_NAME === 'MZ';
+    }
+    if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
+      return true;
+    }
+    if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+      return false;
+    }
+    return null;
+  }
+
+  function init() {
+    var env = isMZ();
+    if (env === false) return;
+    if (env === null) { setTimeout(init, 100); return; }
+    initMZMedia();
+  }
+
+  function initMZMedia() {
+
   var audioContext;
   function ensureAudioContext() {
     try {
@@ -49,4 +72,7 @@
   } else {
     window.MZMedia.init();
   }
+  } // end initMZMedia
+
+  init();
 })();

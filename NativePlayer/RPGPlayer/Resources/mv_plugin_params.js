@@ -3,6 +3,28 @@
 // array-like parameters (e.g., CategoryOrder) without guessing their format.
 
 (function(){
+  // 只在 MV 环境下执行，避免与 MZ 的 PluginManager 行为冲突
+  function isMV() {
+    if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+      return Utils.RPGMAKER_NAME === 'MV';
+    }
+    if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+      return true;
+    }
+    if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
+      return false;
+    }
+    return null;
+  }
+
+  function init() {
+    var env = isMV();
+    if (env === false) return;
+    if (env === null) { setTimeout(init, 100); return; }
+    initMVParams();
+  }
+
+  function initMVParams() {
   function normalizeArrayParameter(value){
     if (value == null) return [];
     if (Array.isArray(value)) return value;
@@ -74,4 +96,7 @@
   }
 
   schedule();
+  } // end initMVParams
+
+  init();
 })();

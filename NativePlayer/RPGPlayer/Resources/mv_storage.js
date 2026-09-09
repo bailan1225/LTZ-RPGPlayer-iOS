@@ -6,17 +6,32 @@
         if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
             return Utils.RPGMAKER_NAME === 'MV';
         }
-        // MZ 有 DataManager.maxSaveFiles，MV 没有；用这个判断
-        if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+        // MZ 有 DataManager.saveGame，MV 没有；用这个判断
+        if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
             return false;
         }
-        return true; // 默认按 MV 处理
+        // MV 有 DataManager.maxSaveFiles，MZ 没有
+        if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+            return true;
+        }
+        return null; // 无法判断，需要等待
     }
-    if (!isMV()) {
-        console.log('[mv_storage] Skipped: not MV environment');
-        return;
+
+    function init() {
+        var env = isMV();
+        if (env === false) {
+            console.log('[mv_storage] Skipped: not MV environment');
+            return;
+        }
+        if (env === null) {
+            setTimeout(init, 100);
+            return;
+        }
+        console.log("Initializing Storage Polyfills (MV)...");
+        initMVStorage();
     }
-    console.log("Initializing Storage Polyfills (MV)...");
+
+    function initMVStorage() {
 
     const SAVE_API_URL = "rpgmv://saves/";
     const existsCache = Object.create(null);
@@ -147,4 +162,7 @@
     
     overrideStorageManager();
     window.addEventListener('load', overrideStorageManager);
+    } // end initMVStorage
+
+    init();
 })();

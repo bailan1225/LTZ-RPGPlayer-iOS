@@ -12,6 +12,29 @@
 (function() {
     'use strict';
 
+    // 只在 MZ 环境下执行，避免与 MV 的 PluginManager 行为冲突
+    function isMZ() {
+        if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+            return Utils.RPGMAKER_NAME === 'MZ';
+        }
+        if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
+            return true;
+        }
+        if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+            return false;
+        }
+        return null;
+    }
+
+    function init() {
+        var env = isMZ();
+        if (env === false) return;
+        if (env === null) { setTimeout(init, 100); return; }
+        initMZParams();
+    }
+
+    function initMZParams() {
+
     var warnedAliases = Object.create(null);
 
     function hasOwn(object, key) {
@@ -136,4 +159,7 @@
             installOnManager(value);
         }
     });
+    } // end initMZParams
+
+    init();
 })();

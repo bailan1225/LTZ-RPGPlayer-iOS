@@ -1,7 +1,35 @@
 // Media & Runtime Patches (MV Specific)
 
 (function() {
-    console.log("Initializing MV Media Patches...");
+    // 只在 MV 环境下执行，避免与 MZ 的 Decrypter 冲突
+    function isMV() {
+        if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+            return Utils.RPGMAKER_NAME === 'MV';
+        }
+        if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+            return true; // MV 有 maxSaveFiles
+        }
+        if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
+            return false; // MZ 有 saveGame
+        }
+        return null; // 无法判断
+    }
+
+    function init() {
+        var env = isMV();
+        if (env === false) {
+            console.log('[mv_media] Skipped: not MV environment');
+            return;
+        }
+        if (env === null) {
+            setTimeout(init, 100);
+            return;
+        }
+        console.log("Initializing MV Media Patches...");
+        initMVMedia();
+    }
+
+    function initMVMedia() {
 
     // --- Decrypter Polyfill ---
     // Handle plain images when game expects encrypted files
@@ -104,4 +132,7 @@
         }
     })();
 
+    } // end initMVMedia
+
+    init();
 })();

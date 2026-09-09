@@ -3,6 +3,38 @@
   // 适配/覆盖 MZ 的 StorageManager/DataManager 存档行为，优先使用 web 存储（localStorage）。
   // 注：不复制官方实现，仅提供最小可玩所需的替代方案，兼容现有 MV 策略与 iOS 环境。
 
+  // 只在 MZ 环境下执行，避免与 MV 的 StorageManager 冲突
+  function isMZ() {
+    if (typeof Utils !== 'undefined' && Utils.RPGMAKER_NAME) {
+      return Utils.RPGMAKER_NAME === 'MZ';
+    }
+    // MZ 有 DataManager.saveGame，MV 没有；用这个判断
+    if (typeof DataManager !== 'undefined' && typeof DataManager.saveGame === 'function') {
+      return true;
+    }
+    // MV 有 DataManager.maxSaveFiles，MZ 没有
+    if (typeof DataManager !== 'undefined' && typeof DataManager.maxSaveFiles === 'function') {
+      return false;
+    }
+    return null; // 无法判断，需要等待
+  }
+
+  function init() {
+    var env = isMZ();
+    if (env === false) {
+      console.log('[mz_storage] Skipped: not MZ environment');
+      return;
+    }
+    if (env === null) {
+      setTimeout(init, 100);
+      return;
+    }
+    console.log('[mz_storage] Initializing MZ storage polyfill...');
+    initMZStorage();
+  }
+
+  function initMZStorage() {
+
   var KEY_PREFIX = 'ArkRPG:MZ:save:';
   var INFO_KEY = 'ArkRPG:MZ:info';
 
@@ -72,4 +104,7 @@
       return contents;
     };
   }
+  } // end initMZStorage
+
+  init();
 })();
