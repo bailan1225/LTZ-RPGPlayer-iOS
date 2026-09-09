@@ -1176,7 +1176,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             return "[]"
         }
         let saveFiles = files.filter { $0.hasPrefix("file") || $0.hasPrefix("global") || $0.hasPrefix("config") }
-        return try? JSONSerialization.data(withJSONObject: saveFiles).base64EncodedString() ?? "[]"
+        return (try? JSONSerialization.data(withJSONObject: saveFiles))?.base64EncodedString() ?? "[]"
     }
 
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String,
