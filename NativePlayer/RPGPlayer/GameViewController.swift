@@ -252,13 +252,14 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 // 尝试未加密格式(.ogg/.m4a/.png/.jpg)。部分游戏 System.json 标记了加密，
                 // 但实际音频/图片文件未加密。
                 let extMap = [
-                    "rpgmvm": ["ogg", "m4a", "mp3", "wav"],
-                    "rpgmvo": ["ogg", "m4a", "mp3"],
+                    "rpgmvm": ["ogg", "m4a", "mp3", "wav", "aac", "flac"],
+                    "rpgmvo": ["ogg", "m4a", "mp3", "wav"],
                     "rpgmvp": ["png", "jpg", "jpeg", "webp"]
                 ]
                 let reqExt = fileURL.pathExtension.lowercased()
                 if let fallbacks = extMap[reqExt] {
                     let baseName = fileURL.deletingPathExtension().lastPathComponent
+                    // 1) 精确文件名匹配（全局 fileIndex）
                     for fbExt in fallbacks {
                         let fbName = "\(baseName).\(fbExt)".lowercased()
                         if let hit = self.fileIndex[fbName], let data = try? Data(contentsOf: hit) {
@@ -266,6 +267,39 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                             let response = Self.makeHTTPResponse(url: url, mime: mime, length: data.count)
                             self.succeedTask(urlSchemeTask, response: response, data: data)
                             CrashReporter.log("scheme ext-fallback: \(rel) -> \(hit.lastPathComponent)")
+                            return
+                        }
+                    }
+                    // 2) 目录扫描：请求目录下模糊匹配（文件名包含 baseName，大小写不敏感）
+                    let reqDir = fileURL.deletingLastPathComponent()
+                    if let dirItems = try? FileManager.default.contentsOfDirectory(
+                        at: reqDir, includingPropertiesForKeys: nil) {
+                        let lowerBase = baseName.lowercased()
+                        for item in dirItems {
+                            let itemName = item.lastPathComponent.lowercased()
+                            guard itemName.hasPrefix(lowerBase) || itemName.contains(lowerBase) else { continue }
+                            let itemExt = item.pathExtension.lowercased()
+                            guard fallbacks.contains(itemExt) else { continue }
+                            if let data = try? Data(contentsOf: item) {
+                                let mime = self.mimeType(itemExt)
+                                let response = Self.makeHTTPResponse(url: url, mime: mime, length: data.count)
+                                self.succeedTask(urlSchemeTask, response: response, data: data)
+                                CrashReporter.log("scheme dir-fallback: \(rel) -> \(item.lastPathComponent)")
+                                return
+                            }
+                        }
+                    }
+                    // 3) 全局模糊匹配：遍历 fileIndex 找包含 baseName 的音频文件
+                    let lowerBase = baseName.lowercased()
+                    for (idxName, idxURL) in self.fileIndex {
+                        guard idxName.contains(lowerBase) else { continue }
+                        let idxExt = idxURL.pathExtension.lowercased()
+                        guard fallbacks.contains(idxExt) else { continue }
+                        if let data = try? Data(contentsOf: idxURL) {
+                            let mime = self.mimeType(idxExt)
+                            let response = Self.makeHTTPResponse(url: url, mime: mime, length: data.count)
+                            self.succeedTask(urlSchemeTask, response: response, data: data)
+                            CrashReporter.log("scheme global-fallback: \(rel) -> \(idxURL.lastPathComponent)")
                             return
                         }
                     }

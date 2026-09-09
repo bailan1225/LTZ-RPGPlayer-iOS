@@ -189,6 +189,19 @@ final class GamesViewController: UITableViewController {
         processNextImport()
     }
 
+    /// 文件App共享进来的 zip：弹出确认框，用户确认后导入
+    func handleIncomingZip(_ url: URL) {
+        let ask = UIAlertController(
+            title: "检测到共享的 zip",
+            message: "\(url.lastPathComponent)\n\n是否解压导入为游戏？",
+            preferredStyle: .alert)
+        ask.addAction(UIAlertAction(title: "导入", style: .default) { [weak self] _ in
+            self?.enqueueImports([url])
+        })
+        ask.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(ask, animated: true)
+    }
+
     private func processNextImport() {
         guard !importing, !importQueue.isEmpty else { return }
         importing = true

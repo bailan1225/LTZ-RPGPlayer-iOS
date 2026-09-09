@@ -485,25 +485,38 @@ final class DataTranslator {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
 
         progress(TranslateProgress(phase: "扫描游戏文本…", done: 0, total: files.count))
+        CrashReporter.log("[translate] dataDir=\(game.dataDir.path) files=\(files.count) target=\(config.target)")
 
         var scanned: [(url: URL, file: (root: Any, refs: [TextRef], hadBOM: Bool))] = []
         var unique: [String] = []
         var seen = Set<String>()
         var termSeen = Set<String>()
+        var totalRefs = 0
+        var filteredRefs = 0
         for f in files {
             if cancelled() { completion(TranslateSummary()); return }
-            guard let r = scanFile(f) else { continue }
+            guard let r = scanFile(f) else {
+                CrashReporter.log("[translate] scan failed: \(f.lastPathComponent)")
+                continue
+            }
             scanned.append((f, r))
-            for ref in r.refs where shouldTranslate(ref.plain, target: config.target) {
-                if !seen.contains(ref.plain) {
-                    seen.insert(ref.plain)
-                    unique.append(ref.plain)
-                    if ref.term { termSeen.insert(ref.plain) }
+            totalRefs += r.refs.count
+            for ref in r.refs {
+                if shouldTranslate(ref.plain, target: config.target) {
+                    if !seen.contains(ref.plain) {
+                        seen.insert(ref.plain)
+                        unique.append(ref.plain)
+                        if ref.term { termSeen.insert(ref.plain) }
+                    }
+                } else {
+                    filteredRefs += 1
                 }
             }
         }
+        CrashReporter.log("[translate] scanned=\(scanned.count) totalRefs=\(totalRefs) filtered=\(filteredRefs) unique=\(unique.count) terms=\(termSeen.count)")
 
         guard !unique.isEmpty else {
+            CrashReporter.log("[translate] no translatable text — check if game already translated or data files are encrypted")
             completion(TranslateSummary(filesProcessed: scanned.count))
             return
         }

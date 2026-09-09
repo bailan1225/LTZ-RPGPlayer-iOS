@@ -32,6 +32,37 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    /// 从文件App / 其他App共享 zip 进来时自动复制到 Incoming 并提示导入
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let incoming = docs.appendingPathComponent("Incoming", isDirectory: true)
+        try? fm.createDirectory(at: incoming, withIntermediateDirectories: true)
+
+        // 处理安全作用域 URL
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+
+        guard url.pathExtension.lowercased() == "zip",
+              fm.fileExists(atPath: url.path) else { return false }
+
+        let dest = incoming.appendingPathComponent(url.lastPathComponent)
+        if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+        do {
+            try fm.copyItem(at: url, to: dest)
+        } catch {
+            return false
+        }
+
+        // 延迟到根视图控制器就绪后提示导入
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            guard let nav = self.window?.rootViewController as? UINavigationController,
+                  let gamesVC = nav.topViewController as? GamesViewController else { return }
+            gamesVC.handleIncomingZip(dest)
+        }
+        return true
+    }
+
     /// 首次启动创建引导目录与说明文件（文件App / 爱思助手可见），只执行一次
     private func createFirstRunStructure() {
         let fm = FileManager.default
