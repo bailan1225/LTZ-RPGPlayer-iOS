@@ -17,6 +17,9 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
     /// 跟踪活跃任务，stop 时标记取消（防止异步读取完成后对已取消任务调用 didFinish 崩溃）
     private var activeTasks = Set<ObjectIdentifier>()
     private let taskLock = NSLock()
+    /// 已确认 404 的请求路径缓存：避免重复触发全局模糊扫描（O(n) 遍历上千文件）
+    private var failedRequests = Set<String>()
+    private let failedLock = NSLock()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -239,6 +242,14 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 self.succeedTask(urlSchemeTask, response: response, data: decrypted)
                 CrashReporter.log("scheme decrypt-fallback: \(rel)")
             } else {
+                // 失败缓存：已确认 404 的路径直接返回，避免重复触发全局模糊扫描（O(n)）
+                self.failedLock.lock()
+                let alreadyFailed = self.failedRequests.contains(rel)
+                self.failedLock.unlock()
+                if alreadyFailed {
+                    self.failTask(urlSchemeTask, code: 404, message: "404 \(rel) (cached)")
+                    return
+                }
                 // 最后尝试：fileIndex 全局查找同名文件（可能在不同目录，RPG Maker 资源名唯一）
                 let name = fileURL.lastPathComponent.lowercased()
                 if let hit = self.fileIndex[name], let data = try? Data(contentsOf: hit) {
@@ -307,6 +318,10 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 let indexCount = self.fileIndex.count
                 let hasName = self.fileIndex[name] != nil
                 CrashReporter.log("scheme 404: \(rel) | index:\(indexCount) nameMatch:\(hasName)")
+                // 加入失败缓存，后续相同请求直接返回 404
+                self.failedLock.lock()
+                self.failedRequests.insert(rel)
+                self.failedLock.unlock()
                 self.failTask(urlSchemeTask, code: 404, message: "404 \(rel)")
             }
         }
@@ -808,18 +823,6 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             self?.backToList()
         })
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        if let pop = alert.popoverPresentationController, let ball = floatingBall {
-            pop.sourceView = ball
-            pop.sourceRect = ball.bounds
-        }
-        present(alert, animated: true)
-    }
-
-    private func showMoreMenu() {
-        let alert = UIAlertController(title: "更多", message: nil, preferredStyle: .actionSheet)
-        alert.addAction(UIAlertAction(title: "💾 存档管理", style: .default) { [weak self] _ in self?.saveMenu() })
-        alert.addAction(UIAlertAction(title: "🎁 作弊器", style: .default) { [weak self] _ in self?.toggleCheat() })
-        alert.addAction(UIAlertAction(title: "返回", style: .cancel))
         if let pop = alert.popoverPresentationController, let ball = floatingBall {
             pop.sourceView = ball
             pop.sourceRect = ball.bounds

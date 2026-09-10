@@ -484,8 +484,9 @@ final class DataTranslator {
         var termSeen = Set<String>()
         var totalRefs = 0
         var filteredRefs = 0
-        for f in files {
+        for (idx, f) in files.enumerated() {
             if cancelled() { completion(TranslateSummary()); return }
+            progress(TranslateProgress(phase: "扫描中 \(idx+1)/\(files.count)", done: idx, total: files.count))
             guard let r = scanFile(f) else {
                 CrashReporter.log("[translate] scan failed: \(f.lastPathComponent)")
                 continue
@@ -546,7 +547,11 @@ final class DataTranslator {
                     group.enter()
                     engine.translate(item) { result in
                         resultQueue.async {
-                            if let r = result { mapping[item] = r }
+                            if let r = result {
+                                mapping[item] = r
+                            } else {
+                                CrashReporter.log("[translate] failed: \(String(item.prefix(60)))")
+                            }
                             doneInBatch += 1
                             processed += 1
                             if doneInBatch % 40 == 0 { engine.saveCache() }
