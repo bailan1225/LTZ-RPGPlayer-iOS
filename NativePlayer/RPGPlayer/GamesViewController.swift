@@ -147,13 +147,8 @@ final class GamesViewController: UITableViewController {
                 return
             }
             let z = zips[0]
-            let ask = UIAlertController(
-                title: "确认解压导入",
-                message: "\(z.lastPathComponent)\n\n将解压并导入为游戏，导入成功后自动删除该压缩包。",
-                preferredStyle: .alert)
-            ask.addAction(UIAlertAction(title: "解压导入", style: .default) { _ in self.enqueueImports([z]) })
-            ask.addAction(UIAlertAction(title: "取消", style: .cancel))
-            self.present(ask, animated: true)
+            self.confirmImportZip(z, title: "确认解压导入",
+                                  message: "\(z.lastPathComponent)\n\n将解压并导入为游戏，导入成功后自动删除该压缩包。")
         })
         sheet.addAction(UIAlertAction(title: "手动复制文件夹指南", style: .default) { [weak self] _ in
             guard let self = self else { return }
@@ -191,11 +186,15 @@ final class GamesViewController: UITableViewController {
 
     /// 文件App共享进来的 zip：弹出确认框，用户确认后导入
     func handleIncomingZip(_ url: URL) {
-        let ask = UIAlertController(
-            title: "检测到共享的 zip",
-            message: "\(url.lastPathComponent)\n\n是否解压导入为游戏？",
-            preferredStyle: .alert)
-        ask.addAction(UIAlertAction(title: "导入", style: .default) { [weak self] _ in
+        confirmImportZip(url, title: "检测到共享的 zip",
+                         message: "\(url.lastPathComponent)\n\n是否解压导入为游戏？",
+                         confirmTitle: "导入")
+    }
+
+    /// 统一的导入确认弹窗：避免三处重复创建 UIAlertController
+    private func confirmImportZip(_ url: URL, title: String, message: String, confirmTitle: String = "解压导入") {
+        let ask = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        ask.addAction(UIAlertAction(title: confirmTitle, style: .default) { [weak self] _ in
             self?.enqueueImports([url])
         })
         ask.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -303,15 +302,8 @@ final class GamesViewController: UITableViewController {
     /// 打开 App 时发现 Documents/Incoming 有 zip -> 弹窗确认导入
     private func checkPendingZips() {
         guard let z = pendingZipCandidates().first else { return }
-        let ask = UIAlertController(
-            title: "发现压缩包",
-            message: "\(z.lastPathComponent)\n\n要解压并导入为游戏吗？（导入成功后自动删除该压缩包）",
-            preferredStyle: .alert)
-        ask.addAction(UIAlertAction(title: "解压导入", style: .default) { [weak self] _ in
-            self?.importZip(z)
-        })
-        ask.addAction(UIAlertAction(title: "稍后", style: .cancel))
-        present(ask, animated: true)
+        confirmImportZip(z, title: "发现压缩包",
+                         message: "\(z.lastPathComponent)\n\n要解压并导入为游戏吗？（导入成功后自动删除该压缩包）")
     }
 
     // MARK: - 翻译操作

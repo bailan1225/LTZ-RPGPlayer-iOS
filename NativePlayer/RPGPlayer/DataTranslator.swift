@@ -539,9 +539,10 @@ final class DataTranslator {
         var processed = 0   // 已处理条数（成功+失败），进度条按此推进，失败也看得见
         func batchTranslate(_ items: [String], _ phase: String, done: @escaping () -> Void) {
             let toTranslate = items.filter { mapping[$0] == nil }
-            workQueue.async {
+            func runBatch(_ batch: [String], retry: Bool) {
+                var failed: [String] = []
                 var doneInBatch = 0
-                for item in toTranslate {
+                for item in batch {
                     if cancelled() { break }
                     semaphore.wait()
                     group.enter()
@@ -550,7 +551,8 @@ final class DataTranslator {
                             if let r = result {
                                 mapping[item] = r
                             } else {
-                                CrashReporter.log("[translate] failed: \(String(item.prefix(60)))")
+                                failed.append(item)
+                                if !retry { CrashReporter.log("[translate] failed: \(String(item.prefix(60)))") }
                             }
                             doneInBatch += 1
                             processed += 1
@@ -565,8 +567,17 @@ final class DataTranslator {
                 }
                 group.wait()
                 engine.saveCache()
-                DispatchQueue.main.async { done() }
+                // 首次失败后自动重试一次（网络抖动/限流恢复后有效）
+                if !retry && !failed.isEmpty && !cancelled() {
+                    CrashReporter.log("[translate] retry \(failed.count) failed items after 1s")
+                    workQueue.asyncAfter(deadline: .now() + 1.0) {
+                        runBatch(failed, retry: true)
+                    }
+                } else {
+                    DispatchQueue.main.async { done() }
+                }
             }
+            workQueue.async { runBatch(toTranslate, retry: false) }
         }
 
         // 阶段 1：术语

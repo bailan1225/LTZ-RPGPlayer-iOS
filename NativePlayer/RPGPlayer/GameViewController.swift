@@ -20,11 +20,16 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
     /// 已确认 404 的请求路径缓存：避免重复触发全局模糊扫描（O(n) 遍历上千文件）
     private var failedRequests = Set<String>()
     private let failedLock = NSLock()
+    /// 媒体文件内存缓存：图片/音频重复请求时直接返回，避免重复磁盘IO
+    /// NSCache 线程安全，自动在内存压力时清理；按文件大小计 cost，上限 64MB / 512 个文件
+    private let mediaCache = NSCache<NSString, NSData>()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
         self.decryptKey = GameDecryptor.loadKey(in: root)
         super.init()
+        mediaCache.countLimit = 512
+        mediaCache.totalCostLimit = 64 * 1024 * 1024
         buildIndex()
     }
 
@@ -73,6 +78,19 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
             }
         }
         return nil
+    }
+
+    /// 带缓存的文件读取：图片/音频等媒体文件命中缓存直接返回，避免重复磁盘IO
+    /// 小文件（<16KB，如JSON）不缓存，避免缓存污染
+    private func cachedRead(_ url: URL, key: String) -> Data? {
+        if let cached = mediaCache.object(forKey: key as NSString) {
+            return cached as Data
+        }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        if data.count >= 1024 {  // 只缓存 >=1KB 的文件（图片/音频），小文件直接读
+            mediaCache.setObject(data as NSData, forKey: key as NSString, cost: data.count)
+        }
+        return data
     }
 
     /// fallback：请求 .png/.ogg/.mp4 但文件还是 .rpgmvp/.rpgmvo/.rpgmvm（预解密遗漏），
@@ -212,7 +230,7 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                     }
                     finalURL = idx
                 }
-                guard let data = try? Data(contentsOf: finalURL) else {
+                guard let data = self.cachedRead(finalURL, key: rel) else {
                     self.failTask(urlSchemeTask, code: 500, message: "read error \(rel)")
                     return
                 }
@@ -1078,6 +1096,23 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
         hideLoading()
         loadingDeadline?.cancel()
         CrashReporter.log("page didFinish navigation")
+        // 白屏检测：didFinish 后 6 秒检查页面是否有实际内容（canvas 或 body 文本）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
+            guard let self = self else { return }
+            webView.evaluateJavaScript("(function(){ var c=document.querySelector('canvas'); var bodyLen=document.body?document.body.innerHTML.length:0; return JSON.stringify({canvasW:c?c.width:0, canvasH:c?c.height:0, bodyLen:bodyLen, hasGame:typeof Graphics!=='undefined'}); })()") { result, _ in
+                if let s = result as? String, let data = s.data(using: .utf8),
+                   let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let canvasW = dict["canvasW"] as? Int ?? 0
+                    let bodyLen = dict["bodyLen"] as? Int ?? 0
+                    let hasGame = dict["hasGame"] as? Bool ?? false
+                    if canvasW == 0 && bodyLen < 200 && !hasGame {
+                        CrashReporter.log("[white-screen] canvas=0 bodyLen=\(bodyLen) hasGame=false — page may be blank")
+                    } else {
+                        CrashReporter.log("[white-screen] OK canvas=\(canvasW) bodyLen=\(bodyLen) hasGame=\(hasGame)")
+                    }
+                }
+            }
+        }
         // 延迟注入 RPGMakerCheatMenu（需要 DataManager 已加载）
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             self?.injectCheatMenu()
@@ -1110,14 +1145,12 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        print("nav error:", error.localizedDescription)
         CrashReporter.log("nav error: \(error.localizedDescription)")
         loadingDeadline?.cancel()
         showLoading("加载出错：\(error.localizedDescription)\n点左上角刷新重试")
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        print("provisional error:", error.localizedDescription)
         CrashReporter.log("provisional error: \(error.localizedDescription)")
         loadingDeadline?.cancel()
         showLoading("加载失败：\(error.localizedDescription)\n点左上角刷新重试")
@@ -1224,11 +1257,23 @@ class FloatingBallView: UIButton {
         addGestureRecognizer(singleTap)
     }
 
-    @objc private func handleTap() { onMenu?() }
+    @objc private func handleTap() {
+        // 点击缩放动画 + 触觉反馈
+        UIView.animate(withDuration: 0.1, animations: {
+            self.transform = CGAffineTransform(scaleX: 0.85, y: 0.85)
+        }) { _ in
+            UIView.animate(withDuration: 0.1) { self.transform = .identity }
+        }
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        onMenu?()
+    }
 
     @objc private func handleDoubleTap() {
         isMinimized.toggle()
         let size = isMinimized ? miniSize : normalSize
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         UIView.animate(withDuration: 0.2) {
             self.bounds = CGRect(x: 0, y: 0, width: size, height: size)
             self.layer.cornerRadius = size / 2
@@ -1238,15 +1283,24 @@ class FloatingBallView: UIButton {
 
     @objc private func handlePan(_ g: UIPanGestureRecognizer) {
         guard let sv = superview else { return }
+        if g.state == .began {
+            // 拖动开始时轻微放大 + 触觉反馈
+            UIView.animate(withDuration: 0.15) { self.transform = CGAffineTransform(scaleX: 1.1, y: 1.1) }
+            let generator = UIImpactFeedbackGenerator(style: .light)
+            generator.impactOccurred()
+        }
         center = CGPoint(x: center.x + g.translation(in: sv).x, y: center.y + g.translation(in: sv).y)
         g.setTranslation(.zero, in: sv)
-        if g.state == .ended {
+        if g.state == .ended || g.state == .cancelled {
+            UIView.animate(withDuration: 0.15) { self.transform = .identity }
             let margin: CGFloat = 6
             let tx = center.x < sv.bounds.midX ? margin + bounds.width / 2 : sv.bounds.width - margin - bounds.width / 2
             let minY = margin + bounds.height / 2
             let maxY = sv.bounds.height - margin - bounds.height / 2
             let ty = min(max(center.y, minY), maxY)
-            UIView.animate(withDuration: 0.25) { self.center = CGPoint(x: tx, y: ty) }
+            UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.7, initialSpringVelocity: 0.5, options: []) {
+                self.center = CGPoint(x: tx, y: ty)
+            }
         }
     }
 }
