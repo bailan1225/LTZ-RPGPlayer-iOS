@@ -942,7 +942,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
             }
             if exported > 0 {
                 CrashReporter.log("save exported: \(exported) .rpgsave files")
-                self.alert("已导出", "导出 \(exported) 个存档文件到：\n\n文件 App → 我的 iPhone → rpgtransplayer → Saves → \(self.savesDir.lastPathComponent)\n\n格式为标准 .rpgsave，可被其他 RPG Maker 播放器直接使用。")
+                self.alert("已导出", "导出 \(exported) 个存档文件到：\n\n文件 App → 我的 iPhone → RPG Player → Saves → \(self.savesDir.lastPathComponent)\n\n格式为标准 .rpgsave，可被其他 RPG Maker 播放器直接使用。")
             } else {
                 self.alert("导出失败", "无法写入存档文件。")
             }

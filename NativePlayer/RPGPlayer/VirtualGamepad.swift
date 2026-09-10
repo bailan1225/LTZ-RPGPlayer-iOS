@@ -1,6 +1,6 @@
 //
 //  VirtualGamepad.swift
-//  rpgtransplayer
+//  RPG Player
 //
 //  虚拟手柄（虚拟键盘），参考开源项目 OnscreenController 的设计理念：
 //  - 全局触摸追踪视图（TouchTrackingView），而非每按钮单独处理
