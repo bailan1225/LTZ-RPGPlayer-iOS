@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 
 /// 崩溃日志：Objective-C 异常与常见信号写 Documents/crash.log，便于真机排障
 enum CrashReporter {
@@ -7,6 +7,11 @@ enum CrashReporter {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("crash.log")
     }
+
+    /// 日志限流：相同消息 1 秒内只写一次，避免高频错误（如音频404循环）导致 IO 瓶颈
+    private static var lastLog: [String: Date] = [:]
+    private static let logLock = NSLock()
+    private static let logThrottleInterval: TimeInterval = 1.0
 
     static func install() {
         NSSetUncaughtExceptionHandler { exc in
@@ -30,7 +35,20 @@ enum CrashReporter {
     }
 
     /// 追加业务日志（JS 加载失败、游戏错误等，用于排障）；超过 256KB 自动清空重写，避免无限增长
+    /// 相同消息 1 秒内只写一次（限流），避免高频错误导致 IO 瓶颈
     static func log(_ text: String) {
+        // 限流检查：相同消息 1 秒内跳过
+        logLock.lock()
+        let now = Date()
+        if let last = lastLog[text], now.timeIntervalSince(last) < logThrottleInterval {
+            logLock.unlock()
+            return
+        }
+        lastLog[text] = now
+        // 清理超过 5 秒的旧记录，避免字典无限增长
+        lastLog = lastLog.filter { now.timeIntervalSince($0.value) < 5.0 }
+        logLock.unlock()
+
         let url = logURL
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
            let size = (attrs[.size] as? NSNumber)?.intValue, size > 256 * 1024 {

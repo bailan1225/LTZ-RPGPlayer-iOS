@@ -26,17 +26,25 @@ enum SafePath {
         }
     }
 
-    /// 路径是否含危险字符（方括号/井号/百分号/问号/空格）
+    /// 路径是否含危险字符（方括号/井号/百分号/问号/空格/Windows 保留字符/路径遍历符）
     static func containsUnsafeChars(_ url: URL) -> Bool {
-        let bad = CharacterSet(charactersIn: "[]#%? ")
+        let bad = CharacterSet(charactersIn: "[]#%? <>|:\"*\\")
         return url.path.unicodeScalars.contains { bad.contains($0) }
     }
 
+    /// 路径遍历防护：检测目录名是否包含 ../ 或 ..\ 等路径遍历符
+    static func containsPathTraversal(_ url: URL) -> Bool {
+        let name = url.lastPathComponent
+        return name.contains("..") || name.hasPrefix(".")
+    }
+
     /// 稳定的路径哈希（不使用 hashValue，跨进程稳定）
+    /// 使用 FNV-1a 64位哈希，分布更均匀
     static func stableHash(_ s: String) -> UInt64 {
-        var h: UInt64 = 5381
+        var h: UInt64 = 14695981039346656037  // FNV offset basis
         for b in s.utf8 {
-            h = ((h << 5) &+ h) &+ UInt64(b)
+            h ^= UInt64(b)
+            h = h &* 1099511628211  // FNV prime
         }
         return h
     }
@@ -47,8 +55,14 @@ enum SafePath {
     }
 
     /// 含特殊字符的目录自动重命名为安全名；无特殊字符或失败时原样返回
+    /// 包含路径遍历防护，拒绝处理含 .. 的目录名
     static func sanitize(_ gameDir: URL) -> URL {
         guard containsUnsafeChars(gameDir) else { return gameDir }
+        // 路径遍历防护：拒绝处理含 .. 的目录名，防止意外移动到上级目录
+        guard !containsPathTraversal(gameDir) else {
+            CrashReporter.log("[SafePath] refused to sanitize path with traversal: \(gameDir.lastPathComponent)")
+            return gameDir
+        }
         let fm = FileManager.default
         var safe = docs.appendingPathComponent("g\(stableHash(gameDir.path) % 1000000)")
         var n = 1
@@ -65,6 +79,7 @@ enum SafePath {
             saveMap()
             return safe
         } catch {
+            CrashReporter.log("[SafePath] move failed: \(error.localizedDescription)")
             return gameDir
         }
     }

@@ -33,6 +33,9 @@ final class TranslatorEngine {
     private let maxTextLength = 450   // MyMemory 单条上限约 500 字符，留余量
 
     private let stateLock = NSLock()
+    /// 正在进行中的请求：相同文本并发时只发一次 API 请求，其他请求等待结果
+    private var inflight: [String: [(String?) -> Void]] = [:]
+    private let inflightLock = NSLock()
 
     /// 最近一次 API 错误的中文描述（AQUA/Agnes/OpenAI 兼容 error.message），供界面诊断（并发安全）
     private var _lastError = ""
@@ -123,6 +126,16 @@ final class TranslatorEngine {
             return
         }
 
+        // 请求去重：相同文本并发时只发一次 API 请求，其他请求等待结果
+        inflightLock.lock()
+        if inflight[text] != nil {
+            inflight[text]?.append(completion)
+            inflightLock.unlock()
+            return
+        }
+        inflight[text] = []
+        inflightLock.unlock()
+
         let target = config.target
         let source = config.source
 
@@ -130,10 +143,14 @@ final class TranslatorEngine {
             // 只缓存成功结果；失败项下次运行会重试（换 Key / 网络恢复后有效）
             if let r = result, !r.isEmpty, r != text {
                 stateLock.lock(); cache[text] = r; stateLock.unlock()
-                completion(r)
-            } else {
-                completion(nil)
             }
+            // 通知所有等待的 completion（包括当前请求和去重等待的请求）
+            inflightLock.lock()
+            let waiters = inflight.removeValue(forKey: text) ?? []
+            inflightLock.unlock()
+            let finalResult = (result != nil && !result!.isEmpty && result != text) ? result : nil
+            completion(finalResult)
+            for w in waiters { w(finalResult) }
         }
 
         switch config.engine {

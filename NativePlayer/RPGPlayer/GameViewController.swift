@@ -38,32 +38,23 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         defer { indexLock.unlock() }
         guard !indexBuilt else { return }
         indexBuilt = true
-        var rels: [String] = []
-        var stack = [root]
-        while let dir = stack.popLast() {
-            guard let items = try? FileManager.default.contentsOfDirectory(
-                at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else { continue }
-            for item in items {
-                var isDir: ObjCBool = false
-                if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
-                    if isDir.boolValue {
-                        stack.append(item)
-                    } else {
-                        let rel = item.path.hasPrefix(root.path + "/")
-                            ? String(item.path.dropFirst((root.path + "/").count))
-                            : item.lastPathComponent
-                        rels.append(rel)
-                    }
-                }
+        let start = Date()
+        // 使用 DirectoryEnumerator 比手动栈遍历更高效（系统级优化）
+        let rootPath = root.path
+        var index: [String: URL] = [:]
+        if let enumerator = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]) {
+            for case let fileURL as URL in enumerator {
+                guard let values = try? fileURL.resourceValues(forKeys: [.isDirectoryKey]),
+                      let isDir = values.isDirectory, !isDir else { continue }
+                let filename = fileURL.lastPathComponent.lowercased()
+                index[filename] = fileURL
             }
         }
-        var index: [String: URL] = [:]
-        for rel in rels {
-            // 用文件名（小写）做 key，与 resolve 的 url.lastPathComponent.lowercased() 匹配
-            let filename = (rel as NSString).lastPathComponent.lowercased()
-            index[filename] = root.appendingPathComponent(rel)
-        }
         fileIndex = index
+        let elapsed = Date().timeIntervalSince(start)
+        CrashReporter.log("[scheme] index built: \(index.count) files in \(String(format: "%.2f", elapsed * 1000))ms")
     }
 
     /// 精确命中失败时做大小写不敏感匹配（兼容插件/资源文件名大小写不一致）
@@ -374,6 +365,15 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         guard isActive else { return }
         task.didFailWithError(NSError(domain: "GameScheme", code: code,
                                       userInfo: [NSLocalizedDescriptionKey: message]))
+    }
+
+    /// 内存警告时清理媒体缓存和失败请求缓存
+    func purgeCache() {
+        mediaCache.removeAllObjects()
+        failedLock.lock()
+        failedRequests.removeAll(keepingCapacity: false)
+        failedLock.unlock()
+        CrashReporter.log("[scheme] cache purged due to memory warning")
     }
 }
 
@@ -830,6 +830,8 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     }
 
     private func showBallMenu() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         let alert = UIAlertController(title: nil, message: nil, preferredStyle: .actionSheet)
         alert.addAction(UIAlertAction(title: "🎮 打开作弊器", style: .default) { [weak self] _ in
             self?.toggleCheat()
@@ -1014,6 +1016,9 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
 
     @objc private func reload() {
         webView.stopLoading()
+        // 刷新时清理失败请求缓存，避免旧的 404 缓存影响重新加载
+        schemeHandler?.purgeCache()
+        CrashReporter.log("[reload] reloading game, cache purged")
         loadGame()
     }
 
@@ -1142,6 +1147,7 @@ final class GameViewController: UIViewController, WKScriptMessageHandler, WKNavi
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         CrashReporter.log("didReceiveMemoryWarning")
+        schemeHandler?.purgeCache()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
