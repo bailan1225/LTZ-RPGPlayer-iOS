@@ -11,8 +11,25 @@
   var state = {
     enabled: !!cfg.enabled,
     translateUI: !!cfg.translateUI,
-    dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {}
+    dictionary: (cfg.dictionary && typeof cfg.dictionary === "object") ? cfg.dictionary : {},
+    hits: 0,
+    misses: 0
   };
+
+  // 诊断：注入后 3 秒报告词典状态
+  setTimeout(function () {
+    try {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.rpgTr) {
+        window.webkit.messageHandlers.rpgTr.postMessage({
+          type: "dictStatus",
+          enabled: state.enabled,
+          dictCount: Object.keys(state.dictionary).length,
+          hits: state.hits,
+          misses: state.misses
+        });
+      }
+    } catch (e) {}
+  }, 3000);
 
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
 
@@ -61,8 +78,13 @@
     var plain = plainOf(parts);
     var normed = norm(plain);
     if (!normed) return null;
-    var hit = dictGet(normed) || dictGet(plain);
-    if (typeof hit !== "string") return null;
+    // 多级匹配：标准化后 → 原文 → 去除首尾空白
+    var hit = dictGet(normed) || dictGet(plain) || dictGet(plain.trim()) || dictGet(normed.trim());
+    if (typeof hit !== "string") {
+      state.misses++;
+      return null;
+    }
+    state.hits++;
     var out = recombine(parts, hit);
     return (out && out !== text) ? out : null;
   }
