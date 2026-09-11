@@ -3513,6 +3513,13 @@ Decrypter.decryptUint8Array = function(uint8Array) {
 (function() {
     'use strict';
 
+    // RPG Player 已注入自带翻译系统（window.RPG_T + translator.js），
+    // 禁用此插件避免双重挂钩 drawTextEx 导致冲突、性能下降和翻译失效
+    if (typeof window !== 'undefined' && window.RPG_T && window.RPG_T.dictionary) {
+        console.log('[RPGTextTranslation] disabled: RPG Player built-in translator active');
+        return;
+    }
+
     // --- 追踪名字框最终显示内容 ---
     function patchNameBoxLog() {
         if (typeof Window_NameBox !== 'undefined' && Window_NameBox.prototype && !Window_NameBox.prototype._rpgTextTranslationPatched) {
