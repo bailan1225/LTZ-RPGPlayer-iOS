@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.68</string>
+	<string>2.69</string>
 	<key>CFBundleVersion</key>
-	<string>93</string>
+	<string>94</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
