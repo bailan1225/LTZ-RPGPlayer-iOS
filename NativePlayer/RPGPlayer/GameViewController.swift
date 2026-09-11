@@ -271,7 +271,6 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                     finalData = repaired
                     CrashReporter.log("scheme auto-repair corrupt: \(rel)")
                 }
-                let mime = self.mimeType(finalURL.pathExtension)
                 let response = Self.makeHTTPResponse(url: url, mime: mime, length: finalData.count)
                 // 图片响应诊断：记录大小和魔数验证
                 if rel.hasPrefix("img/") {
