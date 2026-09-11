@@ -111,6 +111,31 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         return false
     }
 
+    /// 根据文件魔数检测真实格式（用于加密扩展名但实际未加密的文件）
+    static func detectRealExtension(_ data: Data) -> String {
+        guard data.count >= 4 else { return "bin" }
+        let bytes = [UInt8](data.prefix(12))
+        // PNG
+        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 { return "png" }
+        // JPEG
+        if bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF { return "jpg" }
+        // GIF
+        if bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 { return "gif" }
+        // WEBP
+        if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+           && bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 { return "webp" }
+        // OGG
+        if bytes[0] == 0x4F && bytes[1] == 0x67 && bytes[2] == 0x67 && bytes[3] == 0x53 { return "ogg" }
+        // MP3
+        if (bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33) || (bytes[0] == 0xFF && bytes[1] == 0xFB) { return "mp3" }
+        // WAV
+        if bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46
+           && bytes[8] == 0x57 && bytes[10] == 0x41 && bytes[11] == 0x56 { return "wav" }
+        // M4A/MP4
+        if data.count >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 { return "m4a" }
+        return "bin"
+    }
+
     private func resolveEncryptedFallback(_ fileURL: URL) -> Data? {
         guard let key = decryptKey else { return nil }
         let extMap = ["png": "rpgmvp", "jpg": "rpgmvp", "jpeg": "rpgmvp", "gif": "rpgmvp", "webp": "rpgmvp",
@@ -145,6 +170,8 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
         case "m4a": return "audio/mp4"
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
+        case "aac": return "audio/aac"
+        case "flac": return "audio/flac"
         case "mp4": return "video/mp4"
         // RPG Maker 加密文件：游戏 JS 用 arraybuffer 加载后自行解密
         case "rpgmvp", "rpgmvo", "rpgmvm": return "application/octet-stream"
@@ -225,13 +252,22 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                     self.failTask(urlSchemeTask, code: 500, message: "read error \(rel)")
                     return
                 }
-                // 损坏检测：旧版本可能把 .rpgmvp 解坏成 .png（XOR key 错误），
-                // 文件存在但魔数无效。此时自动从同名 .rpgmvp 重新解密。
+                // 加密格式智能检测：请求 .rpgmvp/.rpgmvo/.rpgmvm 但文件实际未加密时，
+                // 直接返回正确 MIME 类型的未加密数据，避免游戏 JS 对未加密文件做 XOR 解密导致损坏
                 let ext = finalURL.pathExtension.lowercased()
-                let isMedia = ["png","jpg","jpeg","gif","webp","ogg","m4a","mp3","wav","mp4","webm"].contains(ext)
+                let encryptedExts = ["rpgmvp", "rpgmvo", "rpgmvm"]
                 var finalData = data
-                if isMedia, !GameSchemeHandler.isValidMediaMagic(data),
-                   let repaired = self.resolveEncryptedFallback(fileURL) {
+                var mime = self.mimeType(ext)
+                if encryptedExts.contains(ext), GameSchemeHandler.isValidMediaMagic(data) {
+                    // 文件魔数有效 → 实际未加密，推断真实格式并返回正确 MIME
+                    let realExt = GameSchemeHandler.detectRealExtension(data)
+                    mime = self.mimeType(realExt)
+                    CrashReporter.log("scheme plain-in-encrypted: \(rel) -> real format .\(realExt)")
+                } else if ["png","jpg","jpeg","gif","webp","ogg","m4a","mp3","wav","mp4","webm","aac","flac"].contains(ext),
+                          !GameSchemeHandler.isValidMediaMagic(data),
+                          let repaired = self.resolveEncryptedFallback(fileURL) {
+                    // 损坏检测：旧版本可能把 .rpgmvp 解坏成 .png（XOR key 错误），
+                    // 文件存在但魔数无效。此时自动从同名 .rpgmvp 重新解密。
                     finalData = repaired
                     CrashReporter.log("scheme auto-repair corrupt: \(rel)")
                 }
@@ -272,9 +308,10 @@ final class GameSchemeHandler: NSObject, WKURLSchemeHandler {
                 // 尝试未加密格式(.ogg/.m4a/.png/.jpg)。部分游戏 System.json 标记了加密，
                 // 但实际音频/图片文件未加密。
                 let extMap = [
-                    "rpgmvm": ["ogg", "m4a", "mp3", "wav", "aac", "flac"],
-                    "rpgmvo": ["ogg", "m4a", "mp3", "wav"],
-                    "rpgmvp": ["png", "jpg", "jpeg", "webp"]
+                    // rpgmvm: MV 中是加密音频(.ogg)，MZ 中是加密视频(.mp4)，同时回退音频和视频
+                    "rpgmvm": ["ogg", "m4a", "mp3", "wav", "aac", "flac", "mp4", "webm"],
+                    "rpgmvo": ["ogg", "m4a", "mp3", "wav", "aac", "flac"],
+                    "rpgmvp": ["png", "jpg", "jpeg", "webp", "gif"]
                 ]
                 let reqExt = fileURL.pathExtension.lowercased()
                 if let fallbacks = extMap[reqExt] {

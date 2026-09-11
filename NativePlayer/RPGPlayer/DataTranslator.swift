@@ -525,10 +525,10 @@ final class DataTranslator {
         let autoConc: Int
         switch config.engine {
         case .offline: autoConc = 1
-        case .mymemory: autoConc = 2   // MyMemory 免费接口限流严格
-        case .custom: autoConc = 6
-        case .agnes: autoConc = 8
-        case .aqua: autoConc = 6       // AQUA 免费通道限流，过高触发 RATE_LIMITED
+        case .mymemory: autoConc = 4   // MyMemory 免费接口，适当提高
+        case .custom: autoConc = 8
+        case .agnes: autoConc = 10
+        case .aqua: autoConc = 8       // AQUA 免费通道，8 并发平衡速度与限流
         }
         let concurrency = presetConc > 0 ? max(1, min(16, presetConc)) : autoConc
         let semaphore = DispatchSemaphore(value: concurrency)
@@ -556,9 +556,12 @@ final class DataTranslator {
                             }
                             doneInBatch += 1
                             processed += 1
-                            if doneInBatch % 40 == 0 { engine.saveCache() }
-                            DispatchQueue.main.async {
-                                progress(TranslateProgress(phase: phase, done: processed, total: total))
+                            if doneInBatch % 100 == 0 { engine.saveCache() }
+                            // 每 20 条更新一次进度，避免上千条翻译时主线程频繁刷新导致卡顿
+                            if processed % 20 == 0 || processed == total {
+                                DispatchQueue.main.async {
+                                    progress(TranslateProgress(phase: phase, done: processed, total: total))
+                                }
                             }
                             semaphore.signal()
                             group.leave()
