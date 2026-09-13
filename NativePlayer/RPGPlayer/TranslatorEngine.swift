@@ -268,25 +268,53 @@ final class TranslatorEngine {
             toolReq.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             toolReq.httpBody = toolData
             CrashReporter.log("[AQUA] tool endpoint request: \(toolURL) text=\(String(capped.prefix(30)))...")
-            session.dataTask(with: toolReq) { [weak self] data, resp, err in
-                guard let data = data, let self = self else {
-                    let errMsg = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    self?.lastError = "工具端点失败: \(errMsg)"
-                    CrashReporter.log("[AQUA] tool endpoint error: \(errMsg)")
-                    self?.aquaChatFallback(text: capped, completion: finish)
-                    return
-                }
-                if let httpResp = resp as? HTTPURLResponse {
-                    CrashReporter.log("[AQUA] tool endpoint response: HTTP \(httpResp.statusCode)")
-                }
-                guard let r = self.parseToolTranslate(data, original: capped) else {
-                    CrashReporter.log("[AQUA] tool endpoint parse failed, falling back to chat")
-                    self.aquaChatFallback(text: capped, completion: finish)
-                    return
-                }
-                CrashReporter.log("[AQUA] tool endpoint success")
-                finish(r.trimmingCharacters(in: .whitespacesAndNewlines))
-            }.resume()
+            // 带重试的请求：502/503/504/网络错误自动重试，最多3次
+            func doRequest(_ attempt: Int) {
+                self.session.dataTask(with: toolReq) { [weak self] data, resp, err in
+                    guard let self = self else { return }
+                    if let httpResp = resp as? HTTPURLResponse {
+                        CrashReporter.log("[AQUA] tool endpoint response: HTTP \(httpResp.statusCode) (attempt \(attempt))")
+                        // 502/503/504 错误：自动重试
+                        if (502...504).contains(httpResp.statusCode) && attempt < 3 {
+                            let delay = Double(attempt) * 1.0
+                            CrashReporter.log("[AQUA] retrying after \(delay)s...")
+                            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
+                                doRequest(attempt + 1)
+                            }
+                            return
+                        }
+                        // 429 限流：等待更久后重试
+                        if httpResp.statusCode == 429 && attempt < 2 {
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                                doRequest(attempt + 1)
+                            }
+                            return
+                        }
+                    }
+                    guard let data = data else {
+                        let errMsg = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                        self.lastError = "工具端点失败: \(errMsg)"
+                        CrashReporter.log("[AQUA] tool endpoint error: \(errMsg)")
+                        // 网络错误也重试
+                        if attempt < 3 {
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                                doRequest(attempt + 1)
+                            }
+                            return
+                        }
+                        self.aquaChatFallback(text: capped, completion: finish)
+                        return
+                    }
+                    guard let r = self.parseToolTranslate(data, original: capped) else {
+                        CrashReporter.log("[AQUA] tool endpoint parse failed, falling back to chat")
+                        self.aquaChatFallback(text: capped, completion: finish)
+                        return
+                    }
+                    CrashReporter.log("[AQUA] tool endpoint success")
+                    finish(r.trimmingCharacters(in: .whitespacesAndNewlines))
+                }.resume()
+            }
+            doRequest(1)
         case .offline:
             completion(nil)
         }
