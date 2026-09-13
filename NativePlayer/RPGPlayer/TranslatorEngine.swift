@@ -252,7 +252,7 @@ final class TranslatorEngine {
             let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
                   let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
-                self.aquaChatFallback(text: capped, completion: completion)
+                self.aquaChatFallback(text: capped, completion: finish)
                 return
             }
             var toolReq = URLRequest(url: toolURL)
@@ -263,14 +263,14 @@ final class TranslatorEngine {
             session.dataTask(with: toolReq) { [weak self] data, _, err in
                 guard let data = data, let self = self else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
-                    self?.aquaChatFallback(text: capped, completion: completion)
+                    self?.aquaChatFallback(text: capped, completion: finish)
                     return
                 }
                 guard let r = self.parseToolTranslate(data, original: capped) else {
-                    self.aquaChatFallback(text: capped, completion: completion)
+                    self.aquaChatFallback(text: capped, completion: finish)
                     return
                 }
-                completion(r.trimmingCharacters(in: .whitespacesAndNewlines))
+                finish(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
             completion(nil)
