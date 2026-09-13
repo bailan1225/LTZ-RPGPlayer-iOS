@@ -525,10 +525,10 @@ final class DataTranslator {
         let autoConc: Int
         switch config.engine {
         case .offline: autoConc = 1
-        case .mymemory: autoConc = 4   // MyMemory 免费接口，适当提高
-        case .custom: autoConc = 8
-        case .agnes: autoConc = 10
-        case .aqua: autoConc = 8       // AQUA 免费通道，8 并发平衡速度与限流
+        case .mymemory: autoConc = 6
+        case .custom: autoConc = 10
+        case .agnes: autoConc = 12
+        case .aqua: autoConc = 12      // AQUA 12 并发，平衡速度与限流
         }
         let concurrency = presetConc > 0 ? max(1, min(16, presetConc)) : autoConc
         let semaphore = DispatchSemaphore(value: concurrency)
