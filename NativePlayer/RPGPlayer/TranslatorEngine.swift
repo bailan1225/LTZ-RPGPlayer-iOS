@@ -254,8 +254,7 @@ final class TranslatorEngine {
             let capped = String(text.prefix(maxTextLength))
             let toolBody: [String: Any] = [
                 "text": capped,
-                "to": aquaLang(config.target),
-                "from": aquaLang(config.source)
+                "to": aquaLang(config.target)
             ]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
                   let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
