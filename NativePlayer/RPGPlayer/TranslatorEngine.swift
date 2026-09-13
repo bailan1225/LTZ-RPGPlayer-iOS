@@ -249,9 +249,14 @@ final class TranslatorEngine {
             // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（免费、不调用模型），
             // 解析失败自动回退对话模型（免费 glm-4-flash，官方网页翻译同款端点，保证出译文）
             let capped = String(text.prefix(maxTextLength))
-            let toolBody: [String: Any] = ["text": capped, "to": aquaLang(config.target)]
+            let toolBody: [String: Any] = [
+                "text": capped,
+                "to": aquaLang(config.target),
+                "from": aquaLang(config.source)
+            ]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
                   let toolURL = URL(string: "https://api.ltzy.top/v1/tools/translate") else {
+                CrashReporter.log("[AQUA] tool endpoint URL invalid, falling back to chat")
                 self.aquaChatFallback(text: capped, completion: finish)
                 return
             }
@@ -260,16 +265,24 @@ final class TranslatorEngine {
             toolReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
             toolReq.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             toolReq.httpBody = toolData
-            session.dataTask(with: toolReq) { [weak self] data, _, err in
+            CrashReporter.log("[AQUA] tool endpoint request: \(toolURL) text=\(String(capped.prefix(30)))...")
+            session.dataTask(with: toolReq) { [weak self] data, resp, err in
                 guard let data = data, let self = self else {
-                    self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    let errMsg = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
+                    self?.lastError = "工具端点失败: \(errMsg)"
+                    CrashReporter.log("[AQUA] tool endpoint error: \(errMsg)")
                     self?.aquaChatFallback(text: capped, completion: finish)
                     return
                 }
+                if let httpResp = resp as? HTTPURLResponse {
+                    CrashReporter.log("[AQUA] tool endpoint response: HTTP \(httpResp.statusCode)")
+                }
                 guard let r = self.parseToolTranslate(data, original: capped) else {
+                    CrashReporter.log("[AQUA] tool endpoint parse failed, falling back to chat")
                     self.aquaChatFallback(text: capped, completion: finish)
                     return
                 }
+                CrashReporter.log("[AQUA] tool endpoint success")
                 finish(r.trimmingCharacters(in: .whitespacesAndNewlines))
             }.resume()
         case .offline:
@@ -383,10 +396,10 @@ final class TranslatorEngine {
     }
 
 
-    /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + glm-4-flash）
+    /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + riva-translate-4b-instruct-v2）
     private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
-        let model = config.model.isEmpty ? "glm-4-flash-250414" : config.model
+        let model = config.model.isEmpty ? "riva-translate-4b-instruct-v2" : config.model
         var body: [String: Any] = [
             "model": model,
             "messages": [
