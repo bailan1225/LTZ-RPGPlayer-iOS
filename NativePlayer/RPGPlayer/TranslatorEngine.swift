@@ -320,12 +320,12 @@ final class TranslatorEngine {
     /// AQUA 工具端点 /v1/tools/translate 响应解析（兼容多种格式 + 递归兜底提取译文 + 失败诊断）
     private func parseToolTranslate(_ data: Data, original: String) -> String? {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            for k in ["translation", "translatedText", "translated_text", "text", "result", "output", "dst", "content", "message"] {
+            for k in ["translated", "translation", "translatedText", "translated_text", "text", "result", "output", "dst", "content", "message"] {
                 if let v = obj[k] as? String, isValidTranslation(v, original: original) { return v }
             }
             if let v = obj["data"] as? String, isValidTranslation(v, original: original) { return v }
             if let d = obj["data"] as? [String: Any] {
-                for k in ["text", "translation", "translatedText", "translated_text", "output", "result", "dst"] {
+                for k in ["translated", "text", "translation", "translatedText", "translated_text", "output", "result", "dst"] {
                     if let v = d[k] as? String, isValidTranslation(v, original: original) { return v }
                 }
                 if let arr = d["translations"] as? [[String: Any]] {
