@@ -137,6 +137,46 @@ final class DataTranslator {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return false }
         guard t.contains(where: { $0.isLetter }) else { return false }
+
+        // MARK: 代码/标识符/脚本噪声过滤（参考 MTool-Translator._is_code_or_noise）
+        let hasCJK = t.contains { c in
+            if let v = c.unicodeScalars.first?.value {
+                return (0x3040...0x30FF).contains(v) || (0x4E00...0x9FFF).contains(v)
+            }
+            return false
+        }
+        // 1. 脚本条件/代码片段：if(...)、switch(...)、变量赋值等，翻译会破坏脚本逻辑
+        //    例：if(s[162])シーン２、if(s[162])キャンセル
+        let codePrefixes = ["if(", "if (", "if s[", "if(s", "switch(", "switch (",
+                           "var ", "let ", "const ", "function", "return ", "$game", "this."]
+        let lowerT = t.lowercased()
+        if codePrefixes.contains(where: { lowerT.hasPrefix($0.lowercased()) })
+            && (t.contains("[") || t.contains("(")) {
+            return false
+        }
+        // 2. 无 CJK 时的代码标识符（含下划线连字符或驼峰，且无空格）
+        //    例：HEV_001、EV005、tb_save_img、getWidthReplay
+        if !hasCJK && !t.contains(" ") {
+            // 全大写/数字+下划线标识符：HEV_001、COMMON_EVENT_02
+            if regexMatch(#"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$"#, in: t) != nil { return false }
+            // 字母_字母 形式的蛇形命名（至少一处 小写/大写_字母数字）
+            if regexMatch(#"[A-Za-z0-9]_[A-Za-z0-9]"#, in: t) != nil
+                && regexMatch(#"^[A-Za-z0-9_]+$"#, in: t) != nil { return false }
+            // 小驼峰 getWidthReplay（小写后紧跟大写）
+            if regexMatch(#"[a-z][A-Z]"#, in: t) != nil
+                && regexMatch(#"^[A-Za-z0-9_]+$"#, in: t) != nil { return false }
+            // 全大写+数字短码（无小写、无空格、长度≤16）：HEV005、ABC123
+            if t.count <= 16 && regexMatch(#"^[A-Z0-9_\-]+$"#, in: t) != nil
+                && t.contains(where: { $0.isNumber }) { return false }
+        }
+        // 3. 含 CJK 但主体是 地图名_楼层:事件ID 形式的定位符（宿屋_2F:HEV005）
+        //    以冒号+大写字母+数字结尾（:HEV005）、含下划线、较短且无完整句读 → 脚本定位串
+        if regexMatch(#":[A-Z]{2,}[0-9]+$"#, in: t) != nil
+            && t.contains("_") && t.count <= 24
+            && !t.contains("。") && !t.contains("、") && !t.contains("　") {
+            return false
+        }
+
         // 目标中文：只跳过已翻译为中文的文本，其他语言（日文/英文/韩文/纯汉字）都翻译
         if target.lowercased().hasPrefix("zh") {
             // 含中文特有字符（的/了/是/在/有 等）→ 已翻译为中文，跳过
@@ -145,6 +185,13 @@ final class DataTranslator {
             return true
         }
         return true
+    }
+
+    /// 正则便捷封装：返回首个匹配的 Range（无匹配为 nil）
+    private static func regexMatch(_ pattern: String, in text: String) -> Range<String.Index>? {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let m = re.firstMatch(in: text, range: NSRange(location: 0, length: (text as NSString).length)) else { return nil }
+        return Range(m.range, in: text)
     }
 
     // MARK: - 扫描提取

@@ -194,12 +194,13 @@ final class TranslatorEngine {
                 return
             }
             // 模式B：无 {text} → OpenAI 兼容 POST JSON（DeepSeek/通义/OpenAI/硅基流动等）
+            let (customProtected, customMapping) = TranslatorEngine.protectPlaceholders(capped)
             var body: [String: Any] = [
                 "messages": [
                     ["role": "system", "content": buildSystemPrompt()],
-                    ["role": "user", "content": capped]
+                    ["role": "user", "content": customProtected]
                 ],
-                "temperature": 0.3
+                "temperature": 0.1
             ]
             if !config.model.isEmpty { body["model"] = config.model }
             // 自动补全：用户常填 base（如 https://api.ltzy.top/v1），缺 /chat/completions 会 404
@@ -217,20 +218,24 @@ final class TranslatorEngine {
             }
             req.httpBody = bodyData
             session.dataTask(with: req) { [weak self] data, _, _ in
-                guard let data = data else { completion(nil); return }
-                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+                guard let data = data, let t = self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else {
+                    completion(nil); return
+                }
+                completion(TranslatorEngine.restorePlaceholders(t, mapping: customMapping))
             }.resume()
         case .agnes:
             // Agnes 2.5 Flash：官方 OpenAI 兼容接口（https://apihub.agnes-ai.com/v1/chat/completions）
             let agnesURL = "https://apihub.agnes-ai.com/v1/chat/completions"
             let agnesModel = config.model.isEmpty ? "agnes-2.5-flash" : config.model
+            let agnesCapped = String(text.prefix(maxTextLength))
+            let (agnesProtected, agnesMapping) = TranslatorEngine.protectPlaceholders(agnesCapped)
             var body: [String: Any] = [
                 "model": agnesModel,
                 "messages": [
                     ["role": "system", "content": buildSystemPrompt()],
-                    ["role": "user", "content": String(text.prefix(maxTextLength))]
+                    ["role": "user", "content": agnesProtected]
                 ],
-                "temperature": 0.3,
+                "temperature": 0.1,
                 "max_tokens": 4096
             ]
             guard let bodyData = try? JSONSerialization.data(withJSONObject: body),
@@ -241,19 +246,21 @@ final class TranslatorEngine {
             req.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             req.httpBody = bodyData
             session.dataTask(with: req) { [weak self] data, _, err in
-                guard let data = data else {
+                guard let data = data, let t = self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else {
                     self?.lastError = (err as? URLError)?.localizedDescription ?? "网络错误/无响应"
                     completion(nil)
                     return
                 }
-                completion(self?.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+                completion(TranslatorEngine.restorePlaceholders(t, mapping: agnesMapping))
             }.resume()
         case .aqua:
             // AQUA 网关：优先官方翻译工具端点 /v1/tools/translate（免费、不调用模型），
             // 解析失败自动回退对话模型（免费 glm-4-flash，官方网页翻译同款端点，保证出译文）
             let capped = String(text.prefix(maxTextLength))
+            // 占位符保护：防止翻译工具破坏 %1、\V[1]、换行等游戏变量
+            let (protectedText, phMapping) = TranslatorEngine.protectPlaceholders(capped)
             let toolBody: [String: Any] = [
-                "text": capped,
+                "text": protectedText,
                 "to": aquaLang(config.target)
             ]
             guard let toolData = try? JSONSerialization.data(withJSONObject: toolBody),
@@ -314,13 +321,24 @@ final class TranslatorEngine {
                         self.aquaChatFallback(text: capped, completion: finish)
                         return
                     }
-                    guard let r = self.parseToolTranslate(data, original: capped) else {
+                    guard let r = self.parseToolTranslate(data, original: protectedText) else {
                         CrashReporter.log("[AQUA] tool endpoint parse failed, falling back to chat")
                         self.aquaChatFallback(text: capped, completion: finish)
                         return
                     }
                     CrashReporter.log("[AQUA] tool endpoint success")
-                    finish(r.trimmingCharacters(in: .whitespacesAndNewlines))
+                    // 还原占位符标记
+                    let trimmed = r.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let restored = TranslatorEngine.restorePlaceholders(trimmed, mapping: phMapping)
+                    // 占位符完整性校验：工具端点是黑盒模型，若它丢弃了 %1、\V[1] 等占位符，
+                    // 结果会破坏游戏逻辑，此时放弃工具结果、回退到带强提示词的 chat 模型
+                    let missing = TranslatorEngine.missingPlaceholders(in: restored, mapping: phMapping)
+                    if missing > 0 {
+                        CrashReporter.log("[AQUA] tool endpoint dropped \(missing) placeholder(s), falling back to chat")
+                        self.aquaChatFallback(text: capped, completion: finish)
+                        return
+                    }
+                    finish(restored)
                 }.resume()
             }
             doRequest(1)
@@ -329,14 +347,118 @@ final class TranslatorEngine {
         }
     }
 
-    /// 构造 system 提示词：始终强制锁定目标语言（避免免费模型自由发挥输出英文）
+    // MARK: - 占位符保护（参考 MTool-Translator，防止 LLM 破坏游戏变量/控制码）
+
+    /// 需要保护的占位符正则：RPG Maker 控制码、消息参数、printf 格式符、花括号变量
+    private static let protectRegex: NSRegularExpression? = {
+        let pattern = [
+            "\\\\[A-Za-z]+(?:\\[[0-9]+\\])?",   // \V[1] \N[2] \C[6] \I[3] \P[1] 等控制码
+            "\\\\[{}.$!|><>^]",                  // \{ \} \. \$ \! \| 等转义符
+            "%\\d+",                             // %1 %2 %3 消息参数
+            "%[sdif]",                           // %s %d %i %f printf 格式符
+            "\\{[^{}]+\\}"                       // {name} {x} 花括号变量
+        ].joined(separator: "|")
+        return try? NSRegularExpression(pattern: pattern)
+    }()
+
+    /// 把占位符和换行替换为 〔PHXn〕/〔NLn〕 标记，LLM 不会改动它们；返回(保护后文本, 映射)
+    fileprivate static func protectPlaceholders(_ raw: String) -> (String, [(String, String)]) {
+        var mapping: [(String, String)] = []
+        // 1. 统一换行，用 〔NLn〕 逐行保护
+        let unified = raw.replacingOccurrences(of: "\r\n", with: "\n")
+                         .replacingOccurrences(of: "\r", with: "\n")
+        var nli = 0
+        var text = ""
+        for ch in unified {
+            if ch == "\n" {
+                let mk = "〔NL\(nli)〕"
+                text += mk
+                mapping.append((mk, "\n"))
+                nli += 1
+            } else {
+                text.append(ch)
+            }
+        }
+        // 2. 保护占位符/控制码，用 〔PHXn〕 标记
+        guard let regex = protectRegex else { return (text, mapping) }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return (text, mapping) }
+        var result = ""
+        var lastEnd = 0
+        var ph = 0
+        for m in matches {
+            result += nsText.substring(with: NSRange(location: lastEnd, length: m.range.location - lastEnd))
+            let original = nsText.substring(with: m.range)
+            let marker = "〔PHX\(ph)〕"
+            result += marker
+            mapping.append((marker, original))
+            ph += 1
+            lastEnd = m.range.location + m.range.length
+        }
+        result += nsText.substring(from: lastEnd)
+        return (result, mapping)
+    }
+
+    /// 把译文中的标记还原为原始占位符；兼容 LLM 改写括号（[]、【】）和大小写
+    fileprivate static func restorePlaceholders(_ translated: String, mapping: [(String, String)]) -> String {
+        var result = translated
+        for (marker, original) in mapping {
+            // 1. 精确替换（中文直角括号 〔〕）
+            result = result.replacingOccurrences(of: marker, with: original)
+            // 2. 英文方括号变体 [NL0] [PHX0]
+            let ascii = marker.replacingOccurrences(of: "〔", with: "[").replacingOccurrences(of: "〕", with: "]")
+            result = result.replacingOccurrences(of: ascii, with: original)
+            // 3. 全角方括号变体 【NL0】【PHX0】
+            let fw = marker.replacingOccurrences(of: "〔", with: "【").replacingOccurrences(of: "〕", with: "】")
+            result = result.replacingOccurrences(of: fw, with: original)
+        }
+        return result
+    }
+
+    /// 校验还原后的译文是否丢失了占位符（只检查 PHX，即游戏变量/控制码；换行 NL 不强制）
+    /// 返回丢失的占位符数量；0 表示完整
+    fileprivate static func missingPlaceholders(in restored: String, mapping: [(String, String)]) -> Int {
+        var missing = 0
+        for (marker, original) in mapping where marker.hasPrefix("〔PHX") {
+            // 单字符控制符（如 \{  \.）不参与严格校验，避免误判
+            if original.count >= 2 && !restored.contains(original) {
+                missing += 1
+            }
+        }
+        return missing
+    }
+
     private func buildSystemPrompt() -> String {
         let target = config.target.isEmpty ? "zh-CN" : config.target
-        let langLine = "Translate into \(target). Output ONLY the translated text, nothing else."
-        if config.prompt.isEmpty {
-            return "You are a game translator. Keep the tone, style and proper nouns. " + langLine
+        let tgtName: String
+        switch target.lowercased() {
+        case let t where t.hasPrefix("zh"): tgtName = "简体中文"
+        case let t where t.hasPrefix("en"): tgtName = "English"
+        case let t where t.hasPrefix("ja"): tgtName = "日本語"
+        case let t where t.hasPrefix("ko"): tgtName = "한국어"
+        default: tgtName = target
         }
-        return config.prompt + " " + langLine
+        // 参考 MTool-Translator 的系统提示词：格式保护 + 本地化规则
+        let rules = """
+        你是专业游戏本地化翻译引擎，把游戏文本翻译成\(tgtName)。
+        【输出要求】
+        1. 只输出译文，不添加解释、注释、标题、引号或额外内容。
+        2. 忠实翻译，不拒绝、不删减、不擅自扩写。
+        3. 保持原文换行、特殊符号、标点和格式结构。
+        【格式保护】
+        1. 必须原样保留 〔NLn〕〔PHXn〕 等所有标记，以及变量、占位符、控制码、HTML标签、资源路径和代码。
+        2. 不得修改或翻译程序变量名、占位符名称、数字格式。
+        3. 专有名词和术语在全文中保持一致。
+        【本地化规则】
+        1. 对话自然、符合\(tgtName)习惯；游戏UI简洁明确。
+        2. 人名、地名、技能名、道具名保持统一。
+        3. 除非原文明确表达，否则不要自行增加语气、信息或背景。
+        """
+        if config.prompt.isEmpty {
+            return rules
+        }
+        return config.prompt + "\n\n" + rules
     }
 
     /// 判断字符串是否像有效译文（排除语言代码、太短、纯ASCII短码）
@@ -436,16 +558,18 @@ final class TranslatorEngine {
 
 
     /// AQUA 对话模型回退：tools/translate 响应解析失败时兜底（官方网页翻译同款：chat/completions + riva-translate-4b-instruct-v2）
-    private func aquaChatFallback(text: String, completion: @escaping (String?) -> Void) {
+    private func aquaChatFallback(text rawText: String, completion: @escaping (String?) -> Void) {
         guard let url = URL(string: "https://api.ltzy.top/v1/chat/completions") else { completion(nil); return }
         let model = config.model.isEmpty ? "riva-translate-4b-instruct-v2" : config.model
+        // 占位符保护：把 %1、\V[1]、换行等替换为标记，防止 LLM 破坏游戏变量
+        let (protected, mapping) = TranslatorEngine.protectPlaceholders(rawText)
         var body: [String: Any] = [
             "model": model,
             "messages": [
                 ["role": "system", "content": buildSystemPrompt()],
-                ["role": "user", "content": text]
+                ["role": "user", "content": protected]
             ],
-            "temperature": 0.2,
+            "temperature": 0.1,
             "max_tokens": 4096
         ]
         guard let bodyData = try? JSONSerialization.data(withJSONObject: body) else { completion(nil); return }
@@ -460,7 +584,14 @@ final class TranslatorEngine {
                 completion(nil)
                 return
             }
-            completion(self.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines))
+            guard let translated = self.parseCustom(data)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !translated.isEmpty else {
+                completion(nil)
+                return
+            }
+            // 还原占位符标记
+            let restored = TranslatorEngine.restorePlaceholders(translated, mapping: mapping)
+            completion(restored)
         }.resume()
     }
 
