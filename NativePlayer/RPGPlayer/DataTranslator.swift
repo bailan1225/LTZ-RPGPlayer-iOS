@@ -141,7 +141,10 @@ final class DataTranslator {
         // MARK: 代码/标识符/脚本噪声过滤（参考 MTool-Translator._is_code_or_noise）
         let hasCJK = t.contains { c in
             if let v = c.unicodeScalars.first?.value {
-                return (0x3040...0x30FF).contains(v) || (0x4E00...0x9FFF).contains(v)
+                return (0x3040...0x30FF).contains(v)      // 平假名/片假名
+                    || (0x4E00...0x9FFF).contains(v)      // CJK 统一汉字
+                    || (0x3400...0x4DBF).contains(v)      // CJK 扩展 A
+                    || (0xAC00...0xD7AF).contains(v)      // 韩文谚文音节（韩文游戏）
             }
             return false
         }
@@ -152,6 +155,11 @@ final class DataTranslator {
         let lowerT = t.lowercased()
         if codePrefixes.contains(where: { lowerT.hasPrefix($0.lowercased()) })
             && (t.contains("[") || t.contains("(")) {
+            return false
+        }
+        // 1b. JS 代码强信号（正常游戏对话绝不会出现，参考 JaimeDevCode _looks_like_code）
+        let codeSignals = [".prototype", "=>", "===", "Game_", "eval(", "function(", "window[", "document."]
+        if codeSignals.contains(where: { t.contains($0) }) {
             return false
         }
         // 2. 无 CJK 时的代码标识符（含下划线连字符或驼峰，且无空格）

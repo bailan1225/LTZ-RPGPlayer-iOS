@@ -139,9 +139,19 @@ final class TranslatorEngine {
         let target = config.target
         let source = config.source
 
-        func finish(_ result: String?) {
+        func finish(_ raw: String?) {
+            // 统一译后处理：清理小瑕疵；检测 LLM 拒绝话术（拒绝视为失败，交由重试/回退）
+            var result: String? = nil
+            if let r = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty, r != text {
+                if self.isRefusal(r) {
+                    self.lastError = "模型拒绝翻译该内容"
+                    CrashReporter.log("[translate] REFUSAL text=\(String(text.prefix(40)))")
+                } else {
+                    result = self.cleanupTranslation(r)
+                }
+            }
             // 只缓存成功结果；失败项下次运行会重试（换 Key / 网络恢复后有效）
-            if let r = result, !r.isEmpty, r != text {
+            if let r = result {
                 stateLock.lock(); cache[text] = r; stateLock.unlock()
             }
             // 通知所有等待的 completion（包括当前请求和去重等待的请求）
@@ -352,11 +362,12 @@ final class TranslatorEngine {
     /// 需要保护的占位符正则：RPG Maker 控制码、消息参数、printf 格式符、花括号变量
     private static let protectRegex: NSRegularExpression? = {
         let pattern = [
-            "\\\\[A-Za-z]+(?:\\[[0-9]+\\])?",   // \V[1] \N[2] \C[6] \I[3] \P[1] 等控制码
+            "\\\\[A-Za-z]+(?:\\[[0-9]+\\])?",   // \V[1] \N[2] \C[6] \I[3] \FS[24] \SE[1] \AF[1] 等控制码（含 MZ）
             "\\\\[{}.$!|><>^]",                  // \{ \} \. \$ \! \| 等转义符
             "%\\d+",                             // %1 %2 %3 消息参数
             "%[sdif]",                           // %s %d %i %f printf 格式符
-            "\\{[^{}]+\\}"                       // {name} {x} 花括号变量
+            "\\{[^{}]+\\}",                      // {name} {x} 花括号变量
+            "<[A-Za-z/!][^>]*>"                  // <WordWrap> <br/> </b> 等插件/HTML 标签（字母开头，避免误伤 <3）
         ].joined(separator: "|")
         return try? NSRegularExpression(pattern: pattern)
     }()
@@ -462,16 +473,66 @@ final class TranslatorEngine {
     }
 
     /// 判断字符串是否像有效译文（排除语言代码、太短、纯ASCII短码）
+    /// 检测 LLM 拒绝翻译的话术（成人向游戏内容常被拒，参考 MoriTranslates _fix_llm_refusal）
+    private func isRefusal(_ t: String) -> Bool {
+        let lower = t.lowercased()
+        let patterns = [
+            // 英文拒绝
+            "i can't translate", "i cannot translate", "i can not translate",
+            "i'm unable to translate", "i am unable to translate",
+            "i cannot assist", "i can't assist", "i cannot provide",
+            "as an ai", "i'm just an ai", "i am an ai", "as a language model",
+            "sexually explicit", "adult content", "inappropriate content",
+            "i'm sorry, but i cannot", "i'm sorry but i cannot",
+            "i'm sorry, i can't", "unable to comply", "i won't translate",
+            "contains explicit", "violates my guidelines", "against my policy",
+            // 中文拒绝
+            "无法翻译", "不能翻译", "不予翻译", "不便翻译",
+            "作为一个ai", "作为人工智能", "作为一名ai", "我是一个ai",
+            "我无法协助", "我不能协助", "无法协助处理", "无法提供该",
+            "抱歉，我不能", "抱歉,我不能", "对不起，我不能",
+            "涉及成人", "涉及色情", "露骨内容", "低俗内容",
+            "违反了我的", "不符合相关规定",
+            // 日文拒绝
+            "翻訳できません", "対応できません", "お手伝いできません"
+        ]
+        for p in patterns {
+            if lower.contains(p.lowercased()) { return true }
+        }
+        return false
+    }
+
+    /// 译后清理：LLM 常见小瑕疵（参考 MoriTranslates post_processor）
+    private func cleanupTranslation(_ t: String) -> String {
+        var s = t
+        // 标点前多余空格（目标为中文时，"你好 ！" → "你好！"）
+        s = s.replacingOccurrences(of: #"[ \t]+([，。！？；：、）】」』])"#, with: "$1", options: .regularExpression)
+        // 连续半角空格压缩为单个
+        s = s.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+        // 行首尾只清理半角空格/tab（保留日文对话常用的全角空格　缩进 U+3000）
+        let halfWidth = CharacterSet(charactersIn: " \t")
+        s = s.components(separatedBy: "\n").map { $0.trimmingCharacters(in: halfWidth) }.joined(separator: "\n")
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     private func isValidTranslation(_ t: String, original: String) -> Bool {
         let s = t.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty, s != original else { return false }
-        guard s.count >= 3 else { return false }  // 排除 zh/en/ja 等两字母语言代码
+        if isRefusal(s) { return false }  // LLM 拒绝话术视为无效，触发回退/重试
+        // 含 CJK 字符的译文：1~2 个汉字也完全合法（毒/剑/药/丝/铁盾/特奥），
+        // 绝不能用长度阈值误杀，否则正确的短术语会被错误回退到 chat（既慢又易错位）
+        let hasCJKResult = s.unicodeScalars.contains { v in
+            (0x3040...0x30FF).contains(v.value)      // 平假名/片假名
+            || (0x3400...0x9FFF).contains(v.value)   // CJK 统一汉字 + 扩展 A
+            || (0xAC00...0xD7AF).contains(v.value)   // 韩文谚文
+        }
+        if hasCJKResult { return true }
+        // 以下为纯拉丁/ASCII 结果：目标是中文时，纯 ASCII 短结果通常是没翻译或错误回显
+        guard s.count >= 3 else { return false }  // 排除 zh/en 等两字母语言代码
         let langCodes: Set<String> = ["zh", "en", "ja", "ko", "fr", "de", "ru", "es",
                                        "zh-cn", "zh-tw", "en-us", "en-gb", "ja-jp", "ko-kr",
                                        "auto", "zh_cn", "zh_tw"]
         if langCodes.contains(s.lowercased()) { return false }
-        let isPureAscii = s.unicodeScalars.allSatisfy { $0.value < 128 }
-        if isPureAscii && s.count <= 5 { return false }  // 排除状态码/短码
+        if s.count <= 5 { return false }  // 排除 HP/TP/EXP 等纯 ASCII 短码原样回显
         return true
     }
 
