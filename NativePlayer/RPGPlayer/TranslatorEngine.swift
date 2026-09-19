@@ -7,6 +7,7 @@ enum TranslationEngine: Int {
     case custom = 2
     case agnes = 3
     case aqua = 4
+    case deepl = 5
 }
 
 struct TranslationConfig {
@@ -352,7 +353,100 @@ final class TranslatorEngine {
                     finish(restored)
                 }.resume()
             }
-            doRequest(1)
+        case .deepl:
+            // DeepL 官方 API：免费版 api-free.deepl.com（Key 以 :fx 结尾），专业版 api.deepl.com。
+            // 免费注册 deepl.com/pro-api，每月 50 万字符，译文质量高、自动识别源语言。
+            let deeplKey = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !deeplKey.isEmpty else {
+                self.lastError = "DeepL 需要填写 API Key（deepl.com/pro-api 免费注册，免费版 Key 以 :fx 结尾）"
+                finish(nil)
+                return
+            }
+            let deeplCapped = String(text.prefix(maxTextLength))
+            let (deeplProtected, deeplMapping) = TranslatorEngine.protectPlaceholders(deeplCapped)
+            // endpoint：用户在“API 地址”显式填了 DeepL 地址则优先；否则按 Key 后缀自动选免费/专业版
+            var endpoint = config.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+            if endpoint.isEmpty {
+                endpoint = deeplKey.hasSuffix(":fx")
+                    ? "https://api-free.deepl.com/v2/translate"
+                    : "https://api.deepl.com/v2/translate"
+            } else if !endpoint.contains("/v2/translate") {
+                endpoint += (endpoint.hasSuffix("/") ? "" : "/") + "v2/translate"
+            }
+            var deeplBody: [String: Any] = [
+                "text": [deeplProtected],
+                "target_lang": deeplLang(config.target, source: false) ?? "ZH",
+                "preserve_formatting": true,
+                "split_sentences": "nonewlines"
+            ]
+            if let src = deeplLang(config.source, source: true) { deeplBody["source_lang"] = src }
+            guard let deeplData = try? JSONSerialization.data(withJSONObject: deeplBody),
+                  let deeplURL = URL(string: endpoint) else {
+                finish(nil); return
+            }
+            func deeplRequest(_ attempt: Int) {
+                var req = URLRequest(url: deeplURL)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue("DeepL-Auth-Key \(deeplKey)", forHTTPHeaderField: "Authorization")
+                req.httpBody = deeplData
+                self.session.dataTask(with: req) { [weak self] data, resp, err in
+                    guard let self = self else { return }
+                    if let http = resp as? HTTPURLResponse {
+                        CrashReporter.log("[DeepL] HTTP \(http.statusCode) (attempt \(attempt))")
+                        // 429 限流 / 5xx 服务端：指数退避重试（1s,4s,9s）
+                        if (http.statusCode == 429 || (500...504).contains(http.statusCode)) && attempt < 3 {
+                            let delay = Double(attempt) * Double(attempt)
+                            DispatchQueue.global().asyncAfter(deadline: .now() + delay) { deeplRequest(attempt + 1) }
+                            return
+                        }
+                        // 403 鉴权失败 / 456 配额用尽：立即失败并给出可读原因（不重试）
+                        if http.statusCode == 403 || http.statusCode == 456 {
+                            var msg = http.statusCode == 456
+                                ? "DeepL 翻译额度已用尽（免费版每月 50 万字符，次月重置）"
+                                : "DeepL API Key 无效或无权访问（403），请检查 Key 与免费/专业版"
+                            if let data = data,
+                               let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                               let m = o["message"] as? String { msg = m }
+                            self.lastError = msg
+                            finish(nil)
+                            return
+                        }
+                    }
+                    guard let data = data, err == nil else {
+                        if attempt < 3 {
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { deeplRequest(attempt + 1) }
+                            return
+                        }
+                        self.lastError = (err as? URLError)?.localizedDescription ?? "DeepL 网络错误/无响应"
+                        finish(nil)
+                        return
+                    }
+                    guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let arr = o["translations"] as? [[String: Any]],
+                          let t = arr.first?["text"] as? String else {
+                        if let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let m = o["message"] as? String {
+                            self.lastError = "DeepL: \(m)"
+                        } else {
+                            self.lastError = "DeepL 响应格式未识别"
+                        }
+                        finish(nil)
+                        return
+                    }
+                    let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let restored = TranslatorEngine.restorePlaceholders(trimmed, mapping: deeplMapping)
+                    let missing = TranslatorEngine.missingPlaceholders(in: restored, mapping: deeplMapping)
+                    if missing > 0 {
+                        self.lastError = "DeepL 丢弃了 \(missing) 个占位符，已放弃该条"
+                        finish(nil)
+                        return
+                    }
+                    finish(restored)
+                }.resume()
+            }
+            CrashReporter.log("[DeepL] request to \(endpoint) target=\(deeplLang(config.target, source: false) ?? \"ZH\")")
+            deeplRequest(1)
         case .offline:
             completion(nil)
         }
@@ -671,6 +765,30 @@ final class TranslatorEngine {
         return "zh"
     }
 
+    /// RPG/BCP 语言码 → DeepL 语言码。
+    /// source=true 时无法识别/auto 返回 nil（交由 DeepL 自动检测）；source=false（目标）默认简体中文。
+    private func deeplLang(_ t: String, source: Bool) -> String? {
+        let low = t.lowercased()
+        if low.hasPrefix("zh") {
+            if source { return "ZH" }
+            return (low.contains("tw") || low.contains("hant") || low.contains("hk")) ? "ZH-HANT" : "ZH"
+        }
+        if low.hasPrefix("en") { return source ? "EN" : "EN-US" }
+        if low.hasPrefix("ja") { return "JA" }
+        if low.hasPrefix("ko") { return "KO" }
+        if low.hasPrefix("fr") { return "FR" }
+        if low.hasPrefix("de") { return "DE" }
+        if low.hasPrefix("ru") { return "RU" }
+        if low.hasPrefix("es") { return "ES" }
+        if low.hasPrefix("it") { return "IT" }
+        if low.hasPrefix("pt") { return source ? "PT" : "PT-BR" }
+        if low.hasPrefix("nl") { return "NL" }
+        if low.hasPrefix("pl") { return "PL" }
+        if low.hasPrefix("tr") { return "TR" }
+        if low == "auto" || low.isEmpty { return source ? nil : "ZH" }
+        return source ? nil : "ZH"
+    }
+
     /// 自定义 API 响应解析：OpenAI 兼容 choices[0].message.content / translatedText / translation / data.translations / 纯文本
     private func parseCustom(_ data: Data) -> String? {
         if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -722,7 +840,7 @@ final class TranslatorEngine {
 
 extension TranslationConfig {
     static func loadFromDefaults(_ defaults: UserDefaults = .standard) -> TranslationConfig {
-        let engines = [TranslationEngine.offline, .mymemory, .custom, .agnes, .aqua]
+        let engines = [TranslationEngine.offline, .mymemory, .custom, .agnes, .aqua, .deepl]
         let idx = defaults.integer(forKey: "tr_engine")
         return TranslationConfig(
             engine: engines.indices.contains(idx) ? engines[idx] : .offline,

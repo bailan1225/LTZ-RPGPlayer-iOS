@@ -21,7 +21,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             title: "保存", style: .done, target: self, action: #selector(saveTapped))
         tableView = UITableView(frame: .zero, style: .insetGrouped)
 
-        engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API", "Agnes", "AQUA"])
+        engineControl = UISegmentedControl(items: ["离线词典", "MyMemory", "自定义API", "Agnes", "AQUA", "DeepL"])
         engineControl.selectedSegmentIndex = defaults.integer(forKey: "tr_engine")
         engineControl.addTarget(self, action: #selector(engineChanged), for: .valueChanged)
 
@@ -165,6 +165,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         case 2: return 5      // 自定义：地址/Key/模型/提示词/测试
         case 3: return 3      // Agnes：Key/模型/测试
         case 4: return 2      // AQUA：Key/测试（tools/translate 无需模型）
+        case 5: return 2      // DeepL：Key/测试
         default: return 0
         }
     }
@@ -179,6 +180,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
             case 1: return "API 设置（当前：MyMemory，无需填写）"
             case 3: return "API 设置（当前：Agnes，只需填 API Key）"
             case 4: return "API 设置（当前：AQUA，只需填 API Key）"
+            case 5: return "API 设置（当前：DeepL，只需填 API Key）"
             default: return "API 设置（当前：自定义API）"
             }
         case 3: return "翻译性能"
@@ -190,7 +192,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 0:
-            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：优先官方翻译工具端点 /v1/tools/translate（免费、自动识别源语言），解析失败自动回退免费对话模型 glm-4-flash-250414（健康 96）保证出译文。只需填 Key（acu.ltzy.top/console 创建，sk-）。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
+            return "MyMemory 免费匿名约 5000 字符/天，填注册邮箱（MyMemory 官网免费注册）可提升到约 5 万字符/天。\n\nAgnes：固定地址 https://apihub.agnes-ai.com/v1/chat/completions，模型默认 agnes-2.5-flash，只需填 Key。\n\nAQUA（acu.ltzy.top）：优先官方翻译工具端点 /v1/tools/translate（免费、自动识别源语言），解析失败自动回退免费对话模型 glm-4-flash-250414（健康 96）保证出译文。只需填 Key（acu.ltzy.top/console 创建，sk-）。\n\nDeepL：译文质量高的官方引擎，免费版每月 50 万字符；在 deepl.com/pro-api 免费注册，到账户页复制 Authentication Key（免费版以 :fx 结尾）填入 API Key，免费/专业版地址自动识别。\n\n每项填好后点右上角「保存」；也可直接点「测试翻译连接」验证 Key 与网络。\n\n自定义 API 兼容两种方式：\n① URL 占位符：地址含 {text}（{key} {prompt} {model} 可选）时直接替换；\n② OpenAI 兼容接口（推荐）：地址填 https://…/chat/completions，请求自动 POST JSON，Key 走 Bearer，支持 DeepSeek/通义/OpenAI/硅基流动等。"
         case 3: return "离线词典：把 dict.json（键=原文，值=译文，UTF-8）放入「文件App → 我的 iPhone → RPG Player」，优先于内置词典。"
         case 4: return "选择喜欢的主题颜色，即时生效。"
         case 5:
@@ -256,9 +258,9 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
                 case 1: apiCell(cell, "模型（默认 agnes-2.5-flash）", modelField, 190)
                 default: testCell(cell)
                 }
-            case 4:
+            case 4, 5:
                 switch row {
-                case 0: apiCell(cell, "API Key", keyField, 200)
+                case 0: apiCell(cell, eng == 5 ? "DeepL API Key" : "API Key", keyField, 200)
                 default: testCell(cell)
                 }
             default:
@@ -301,7 +303,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         tableView.deselectRow(at: indexPath, animated: true)
         if indexPath.section == 2 {
             let eng = engineControl?.selectedSegmentIndex ?? defaults.integer(forKey: "tr_engine")
-            let testRow = eng == 2 ? 4 : (eng == 3 ? 2 : (eng == 4 ? 1 : -1))
+            let testRow = eng == 2 ? 4 : (eng == 3 ? 2 : ((eng == 4 || eng == 5) ? 1 : -1))
             if indexPath.row == testRow { testTapped() }
             return
         }
@@ -334,7 +336,7 @@ final class SettingsViewController: UITableViewController, UITextFieldDelegate {
         if indexPath.row == 0 {
             let sheet = UIAlertController(
                 title: "翻译并发数",
-                message: "同时发起的翻译请求数。调高更快，但免费通道/MyMemory 限流严格时易报错；遇到失败变多就调低。\n\n自动 = 按引擎推荐（离线 1 / MyMemory 2 / AQUA·自定义 6 / Agnes 8）。",
+                message: "同时发起的翻译请求数。调高更快，但免费通道/MyMemory 限流严格时易报错；遇到失败变多就调低。\n\n自动 = 按引擎推荐（离线 1 / DeepL 4 / MyMemory 6 / 自定义 10 / Agnes 12 / AQUA 16）。",
                 preferredStyle: .actionSheet)
             let options: [(String, Int)] = [("自动（按引擎）", 0), ("2 路", 2), ("4 路", 4), ("6 路", 6), ("8 路", 8), ("12 路", 12), ("16 路", 16)]
             for (title, v) in options {

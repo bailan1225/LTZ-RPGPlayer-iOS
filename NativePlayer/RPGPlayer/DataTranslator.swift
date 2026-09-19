@@ -584,6 +584,7 @@ final class DataTranslator {
         case .custom: autoConc = 10
         case .agnes: autoConc = 12
         case .aqua: autoConc = 16      // AQUA 16 并发，提高速度
+        case .deepl: autoConc = 4      // DeepL 免费版限流较严，保守并发
         }
         let concurrency = presetConc > 0 ? max(1, min(16, presetConc)) : autoConc
         let semaphore = DispatchSemaphore(value: concurrency)

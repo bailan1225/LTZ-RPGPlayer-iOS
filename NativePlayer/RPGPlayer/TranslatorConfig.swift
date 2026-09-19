@@ -5,7 +5,7 @@ enum TranslatorConfig {
 
     static func injectionSource() -> String {
         let defaults = UserDefaults.standard
-        let engines = ["offline", "mymemory", "custom", "agnes", "aqua"]
+        let engines = ["offline", "mymemory", "custom", "agnes", "aqua", "deepl"]
         let idx = defaults.integer(forKey: "tr_engine")
         let engine = engines.indices.contains(idx) ? engines[idx] : "offline"
 
