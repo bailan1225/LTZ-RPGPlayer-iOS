@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 
 /// 游戏信息：根目录 + data 目录
 struct GameInfo {
@@ -528,7 +528,7 @@ final class DataTranslator {
         case .mymemory: autoConc = 6
         case .custom: autoConc = 10
         case .agnes: autoConc = 12
-        case .aqua: autoConc = 12      // AQUA 12 并发，平衡速度与限流
+        case .aqua: autoConc = 16      // AQUA 16 并发，提高速度
         }
         let concurrency = presetConc > 0 ? max(1, min(16, presetConc)) : autoConc
         let semaphore = DispatchSemaphore(value: concurrency)
@@ -556,7 +556,7 @@ final class DataTranslator {
                             }
                             doneInBatch += 1
                             processed += 1
-                            if doneInBatch % 100 == 0 { engine.saveCache() }
+                            if doneInBatch % 50 == 0 { engine.saveCache() }
                             // 每 20 条更新一次进度，避免上千条翻译时主线程频繁刷新导致卡顿
                             if processed % 20 == 0 || processed == total {
                                 DispatchQueue.main.async {
