@@ -373,9 +373,10 @@ final class TranslatorEngine {
             } else if !endpoint.contains("/v2/translate") {
                 endpoint += (endpoint.hasSuffix("/") ? "" : "/") + "v2/translate"
             }
+            let deeplTargetLang = deeplLang(config.target, source: false) ?? "ZH"
             var deeplBody: [String: Any] = [
                 "text": [deeplProtected],
-                "target_lang": deeplLang(config.target, source: false) ?? "ZH",
+                "target_lang": deeplTargetLang,
                 "preserve_formatting": true,
                 "split_sentences": "nonewlines"
             ]
@@ -445,7 +446,7 @@ final class TranslatorEngine {
                     finish(restored)
                 }.resume()
             }
-            CrashReporter.log("[DeepL] request to \(endpoint) target=\(deeplLang(config.target, source: false) ?? \"ZH\")")
+            CrashReporter.log("[DeepL] request to \(endpoint) target=\(deeplTargetLang)")
             deeplRequest(1)
         case .offline:
             completion(nil)

@@ -328,6 +328,7 @@ final class GamesViewController: UITableViewController {
         case .custom: return "自定义API"
         case .agnes: return "Agnes"
         case .aqua: return "AQUA"
+        case .deepl: return "DeepL"
         }
     }
 
