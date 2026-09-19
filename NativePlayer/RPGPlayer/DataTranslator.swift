@@ -393,14 +393,28 @@ final class DataTranslator {
 
     // MARK: - 写回
 
-    /// 全局覆盖词典（mtool/精修翻译文件）：Documents/translations/override.json，{原文: 译文}
-    /// 翻译时命中该词典的句子直接采用，不发 API，保证术语与精修一致
+    /// 全局覆盖词典：合并 Documents/translations/ 下所有 {原文: 译文} JSON
+    /// （导入的 MTool/外部词库、每游戏翻译结果 <游戏名>.json、override.json），
+    /// 与运行时 TranslatorConfig 注入词典的口径完全一致。
+    /// 翻译时命中该词典的句子直接采用，不发 API，保证术语与精修一致、跨游戏复用。
     static func overrides() -> [String: String] {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = docs.appendingPathComponent("translations/override.json")
-        guard let d = try? Data(contentsOf: url),
-              let obj = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { return [:] }
-        return obj
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent("translations", isDirectory: true)
+        var out: [String: String] = [:]
+        guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
+            return out
+        }
+        // 按文件名排序保证合并结果可重现；后加载的覆盖先加载的
+        for f in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        where f.pathExtension.lowercased() == "json" {
+            guard let d = try? Data(contentsOf: f),
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: String] else { continue }
+            for (k, v) in obj where !k.isEmpty && !v.isEmpty {
+                out[k] = v
+            }
+        }
+        return out
     }
 
     /// 应用外部翻译文件（mtool 或其他工具导出的 {原文: 译文} JSON），直接写回游戏 data

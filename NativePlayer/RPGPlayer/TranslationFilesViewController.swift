@@ -1,7 +1,9 @@
 import UIKit
+import UniformTypeIdentifiers
 
 /// 翻译文件管理器（mtool 风格）：管理 translations/*.json（{原文:译文} 词典）与 dict.json，
-/// 支持查看/编辑/导出/删除；这些文件同时也是播放游戏时的运行时词典
+/// 支持导入外部词库（MTool / json-translator 导出的 ManualTransFile 等）、查看/编辑/导出/删除；
+/// 这些文件同时也是播放游戏时的运行时词典（离线命中）与批量翻译的覆盖词典
 final class TranslationFilesViewController: UITableViewController {
 
     private var files: [URL] = []
@@ -11,6 +13,8 @@ final class TranslationFilesViewController: UITableViewController {
         title = "翻译文件"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "新建词典", style: .plain, target: self, action: #selector(createDict))
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: "导入词库", style: .done, target: self, action: #selector(importGlossary))
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         refresh()
         NotificationCenter.default.addObserver(
@@ -66,6 +70,16 @@ final class TranslationFilesViewController: UITableViewController {
             }
         })
         present(a, animated: true)
+    }
+
+    // MARK: - 导入外部词库（MTool / json-translator 导出的 {原文:译文} JSON）
+
+    @objc private func importGlossary() {
+        // 明确动作：点开就是系统文件选择器，选完即自动导入并弹结果，不做“选完没按钮”的第二步
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType.json])
+        picker.delegate = self
+        picker.allowsMultipleSelection = true
+        present(picker, animated: true)
     }
 
     private func pushEditor(_ url: URL) {
@@ -139,8 +153,36 @@ final class TranslationFilesViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        "translations/ 下的 JSON 词典在播放游戏时会自动加载（离线命中）；「新建词典」可先建空文件再手动填词条。"
+        "点左上角「导入词库」可把电脑上 MTool / json-translator 译好的 ManualTransFile.json 等 {原文:译文} 词库导入（自动识别并跳过未译条目）。translations/ 下的 JSON 在播放游戏时离线命中、批量翻译时也不再发请求；「新建词典」可先建空文件再手动填词条。"
     }
+}
+
+// MARK: - 词库文件选择与导入
+extension TranslationFilesViewController: UIDocumentPickerDelegate {
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        var reports: [String] = []
+        var okCount = 0
+        for url in urls where url.pathExtension.lowercased() == "json" {
+            do {
+                let o = try GlossaryImporter.importFile(at: url)
+                okCount += 1
+                reports.append("✅ \(o.fileName)：导入 \(o.entries) 条（跳过 \(o.skipped) 条未译/空条目）")
+            } catch {
+                reports.append("⚠️ \(url.lastPathComponent)：\(error.localizedDescription)")
+            }
+        }
+        let nonJson = urls.filter { $0.pathExtension.lowercased() != "json" }
+        for u in nonJson { reports.append("⚠️ \(u.lastPathComponent)：不是 .json 文件") }
+        if reports.isEmpty { reports.append("没有选择可导入的 .json 词库文件") }
+        refresh()
+        let title = okCount > 0 ? "导入完成（\(okCount) 个词库）" : "导入失败"
+        let message = reports.joined(separator: "\n") + "\n\n重新打开游戏即按新词库离线显示中文，无需在手机上翻译。"
+        let a = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        a.addAction(UIAlertAction(title: "好", style: .default))
+        present(a, animated: true)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
 }
 
 /// 词典编辑器：JSON 文本编辑 + 保存校验 + 导出
