@@ -32,6 +32,15 @@
   }, 3000);
 
   function norm(s) { return String(s).replace(/\s+/g, " ").trim(); }
+  
+  // MTool 风格的更强标准化：去除标点符号、全角转半角、忽略大小写
+  function normStrong(s) {
+    return String(s)
+      .replace(/[\s\r\n\t]+/g, " ")
+      .replace(/[。．・、，！？：；""''「」『』（）()\[\]【】《》〈〉…—－\-—_.,!?;:'"()\[\]<>]/g, "")
+      .toLowerCase()
+      .trim();
+  }
 
   // 原型安全的词典读取：避免 "__proto__/constructor" 等键命中继承属性
   function dictGet(s) {
@@ -78,8 +87,22 @@
     var plain = plainOf(parts);
     var normed = norm(plain);
     if (!normed) return null;
-    // 多级匹配：标准化后 → 原文 → 去除首尾空白
+    
+    // 多级匹配（MTool 风格）：
+    // 1. 标准化后匹配
+    // 2. 原文匹配
+    // 3. 去除首尾空白
+    // 4. 更强标准化（去标点、小写）匹配
     var hit = dictGet(normed) || dictGet(plain) || dictGet(plain.trim()) || dictGet(normed.trim());
+    
+    // 如果没命中，尝试更强标准化匹配（去标点、小写）
+    if (typeof hit !== "string") {
+      var strong = normStrong(plain);
+      if (strong.length > 0) {
+        hit = dictGet(strong);
+      }
+    }
+    
     if (typeof hit !== "string") {
       state.misses++;
       return null;

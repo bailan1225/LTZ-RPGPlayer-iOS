@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 
 /// 翻译引擎配置（与播放器 App 的 key 保持一致，方便用户习惯复用）
 enum TranslationEngine: Int {
@@ -268,16 +268,16 @@ final class TranslatorEngine {
             toolReq.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
             toolReq.httpBody = toolData
             CrashReporter.log("[AQUA] tool endpoint request: \(toolURL) text=\(String(capped.prefix(30)))...")
-            // 带重试的请求：502/503/504/网络错误自动重试，最多3次
+            // 带重试的请求：502/503/504/网络错误自动重试，最多3次（指数退避）
             func doRequest(_ attempt: Int) {
                 self.session.dataTask(with: toolReq) { [weak self] data, resp, err in
                     guard let self = self else { return }
                     if let httpResp = resp as? HTTPURLResponse {
                         CrashReporter.log("[AQUA] tool endpoint response: HTTP \(httpResp.statusCode) (attempt \(attempt))")
-                        // 502/503/504 错误：自动重试
+                        // 502/503/504 错误：自动重试（指数退避：1s, 4s, 9s...）
                         if (502...504).contains(httpResp.statusCode) && attempt < 3 {
-                            let delay = Double(attempt) * 1.0
-                            CrashReporter.log("[AQUA] retrying after \(delay)s...")
+                            let delay = Double(attempt) * Double(attempt)
+                            CrashReporter.log("[AQUA] retrying after \(delay)s (5xx error)")
                             DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                                 doRequest(attempt + 1)
                             }
@@ -285,7 +285,16 @@ final class TranslatorEngine {
                         }
                         // 429 限流：等待更久后重试
                         if httpResp.statusCode == 429 && attempt < 2 {
-                            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                            CrashReporter.log("[AQUA] rate limited, waiting 3s...")
+                            DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+                                doRequest(attempt + 1)
+                            }
+                            return
+                        }
+                        // 500 内部错误也重试
+                        if httpResp.statusCode == 500 && attempt < 2 {
+                            let delay = Double(attempt) * 2.0
+                            DispatchQueue.global().asyncAfter(deadline: .now() + delay) {
                                 doRequest(attempt + 1)
                             }
                             return
