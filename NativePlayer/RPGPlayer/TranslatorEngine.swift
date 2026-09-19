@@ -160,7 +160,8 @@ final class TranslatorEngine {
             inflightLock.unlock()
             let finalResult = (result != nil && !result!.isEmpty && result != text) ? result : nil
             if finalResult == nil {
-                CrashReporter.log("[translate] FAIL text=\(String(text.prefix(40))) reason=\(lastError ?? "unknown")")
+                let reason = self.lastError.isEmpty ? "unknown" : self.lastError
+                CrashReporter.log("[translate] FAIL text=\(String(text.prefix(40))) reason=\(reason)")
             }
             completion(finalResult)
             for w in waiters { w(finalResult) }
